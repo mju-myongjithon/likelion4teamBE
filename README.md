@@ -92,11 +92,11 @@
 - 오프라인 미팅 1회 이상 인증 필수 (명지톤 규정)
 - 각 연동 체크포인트 전까지 FE는 목데이터로 화면 먼저 진행
 - BE/AI 기능이 늦어져도 FE 작업이 밀리지 않도록 목데이터 우선 원칙 유지
-- 브랜치 전략: `main` 직접 작업 금지 → 기능별 브랜치 생성 → PR → 팀원 리뷰 후 병합
+- 브랜치 전략: `dev` 직접 작업 금지 → 기능별 브랜치 생성 → PR → 팀원 리뷰 후 병합
 
 ```bash
-git checkout main
-git pull origin main
+git checkout dev
+git pull origin dev
 git checkout -b [기능이름]     # 예: git checkout -b feature/f1-upload
 # 작업 후
 git add .
