@@ -20,10 +20,10 @@ public class PhotoController {
     private final PhotoService photoService;
 
     @Operation(summary = "사진 업로드", description = "오늘의 사진을 업로드합니다. 최소 3장 필요, 프라이버시 모드 기본 ON")
-    @PostMapping
+    @PostMapping(consumes = "multipart/form-data")
     public ResponseEntity<PhotoUploadResponse> uploadPhoto(
             @RequestParam UUID userId,
-            @RequestParam MultipartFile file,
+            @RequestPart MultipartFile file,
             @RequestParam(defaultValue = "true") boolean isPrivacyMode
     ) {
         PhotoUploadResponse response = photoService.uploadPhoto(userId, file, isPrivacyMode);
