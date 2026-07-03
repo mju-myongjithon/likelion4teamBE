@@ -1,7 +1,14 @@
 package com.myongjithon.syncday.global.exception;
 
+import lombok.Getter;
+
+@Getter
 public class PhotoUploadException extends RuntimeException {
-    public PhotoUploadException(String message) {
-        super(message);
+
+    private final PhotoErrorCode errorCode;
+
+    public PhotoUploadException(PhotoErrorCode errorCode) {
+        super(errorCode.getMessage());
+        this.errorCode = errorCode;
     }
 }
