@@ -1,5 +1,6 @@
 package com.myongjithon.syncday.domain.photo.dto;
 
+import com.myongjithon.syncday.domain.photo.Photo;
 import lombok.Builder;
 import lombok.Getter;
 
@@ -12,11 +13,11 @@ public class PhotoStatusResponse {
     private boolean readyForAnalysis;
 
     public static PhotoStatusResponse of(int uploadedCount) {
-        int required = 3;
         return PhotoStatusResponse.builder()
                 .uploadedCount(uploadedCount)
-                .requiredCount(required)
-                .readyForAnalysis(uploadedCount >= required)
+                .requiredCount(Photo.REQUIRED_PHOTO_COUNT)
+                .readyForAnalysis(uploadedCount >= Photo.REQUIRED_PHOTO_COUNT)
                 .build();
     }
+
 }

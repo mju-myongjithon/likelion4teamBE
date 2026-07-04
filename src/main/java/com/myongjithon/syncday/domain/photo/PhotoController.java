@@ -1,13 +1,13 @@
 package com.myongjithon.syncday.domain.photo;
 
 import com.myongjithon.syncday.domain.photo.dto.PhotoStatusResponse;
+import com.myongjithon.syncday.domain.photo.dto.PhotoUploadRequest;
 import com.myongjithon.syncday.domain.photo.dto.PhotoUploadResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.multipart.MultipartFile;
 
 import java.util.UUID;
 
@@ -22,11 +22,12 @@ public class PhotoController {
     @Operation(summary = "사진 업로드", description = "오늘의 사진을 업로드합니다. 최소 3장 필요, 프라이버시 모드 기본 ON")
     @PostMapping(consumes = "multipart/form-data")
     public ResponseEntity<PhotoUploadResponse> uploadPhoto(
-            @RequestParam UUID userId,
-            @RequestPart MultipartFile file,
-            @RequestParam(defaultValue = "true") boolean isPrivacyMode
+            @ModelAttribute PhotoUploadRequest request
     ) {
-        PhotoUploadResponse response = photoService.uploadPhoto(userId, file, isPrivacyMode);
+        boolean privacyMode = request.getIsPrivacyMode() != null ? request.getIsPrivacyMode() : true;
+        PhotoUploadResponse response = photoService.uploadPhoto(
+                request.getUserId(), request.getFile(), privacyMode
+        );
         return ResponseEntity.ok(response);
     }
 

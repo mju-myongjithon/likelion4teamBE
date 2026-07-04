@@ -15,6 +15,8 @@ import java.util.UUID;
 @NoArgsConstructor
 public class Photo {
 
+    public static final int REQUIRED_PHOTO_COUNT = 3;
+
     @Id
     @GeneratedValue
     private UUID photoId;
@@ -27,7 +29,7 @@ public class Photo {
     private String imageUrl;
 
     @Column(name = "is_privacy_mode", nullable = false)
-    private Boolean isPrivacyMode = true;
+    private Boolean isPrivacyMode;
 
     @Column(name = "uploaded_at", nullable = false)
     private LocalDateTime uploadedAt;

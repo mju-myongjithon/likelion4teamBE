@@ -26,8 +26,6 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class PhotoService {
 
-    private static final int REQUIRED_PHOTO_COUNT = 3;
-
     private final PhotoRepository photoRepository;
     private final AppUserRepository appUserRepository;
     private final S3Client s3Client;
