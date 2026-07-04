@@ -7,10 +7,15 @@ import com.myongjithon.syncday.domain.user.AppUserRepository;
 import com.myongjithon.syncday.global.exception.PhotoErrorCode;
 import com.myongjithon.syncday.global.exception.PhotoUploadException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
+import software.amazon.awssdk.core.sync.RequestBody;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
+import java.io.IOException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -63,11 +68,29 @@ public class PhotoService {
         }
     }
 
+    private final S3Client s3Client;
+
+    @Value("${aws.s3.bucket}")
+    private String bucketName;
+
+    // 기존 uploadToS3 교체
     private String uploadToS3(MultipartFile file, boolean isPrivacyMode) {
-        // TODO: AWS S3 세팅 완료 후 구현
-        // 1. isPrivacyMode == true면 FaceMosaicUtil로 모자이크 처리
-        // 2. S3Config로 만든 S3Client로 업로드
-        // 3. 업로드된 S3 URL 반환
-        throw new UnsupportedOperationException("S3 연동 아직 미구현");
+        try {
+            String fileName = UUID.randomUUID() + "_" + file.getOriginalFilename();
+
+            PutObjectRequest request = PutObjectRequest.builder()
+                    .bucket(bucketName)
+                    .key(fileName)
+                    .contentType(file.getContentType())
+                    .build();
+
+            s3Client.putObject(request, RequestBody.fromBytes(file.getBytes()));
+
+            return String.format("https://%s.s3.%s.amazonaws.com/%s",
+                    bucketName, "ap-northeast-2", fileName);
+
+        } catch (IOException e) {
+            throw new PhotoUploadException(PhotoErrorCode.S3_UPLOAD_FAILED);
+        }
     }
 }
