@@ -74,28 +74,38 @@ public class PhotoService {
     }
 
     private String uploadToS3(MultipartFile file, boolean isPrivacyMode) {
+        byte[] imageBytes;
         try {
-            byte[] imageBytes = file.getBytes();
+            imageBytes = file.getBytes();
 
             if (isPrivacyMode) {
                 imageBytes = FaceMosaicUtil.applyMosaic(imageBytes, rekognitionClient);
             }
-
-            String fileName = UUID.randomUUID() + "_" + file.getOriginalFilename();
-
-            PutObjectRequest request = PutObjectRequest.builder()
-                    .bucket(bucketName)
-                    .key(fileName)
-                    .contentType(file.getContentType())
-                    .build();
-
-            s3Client.putObject(request, RequestBody.fromBytes(imageBytes));
-
-            return String.format("https://%s.s3.%s.amazonaws.com/%s",
-                    bucketName, "ap-northeast-2", fileName);
-
         } catch (IOException e) {
             throw new PhotoUploadException(PhotoErrorCode.S3_UPLOAD_FAILED);
         }
+
+        String fileName = UUID.randomUUID() + "_" + file.getOriginalFilename();
+
+        PutObjectRequest request = PutObjectRequest.builder()
+                .bucket(bucketName)
+                .key(fileName)
+                .contentType(file.getContentType())
+                .build();
+
+        // 1차 시도
+        try {
+            s3Client.putObject(request, RequestBody.fromBytes(imageBytes));
+        } catch (Exception firstAttemptException) {
+            // 실패 시 1회 재시도
+            try {
+                s3Client.putObject(request, RequestBody.fromBytes(imageBytes));
+            } catch (Exception secondAttemptException) {
+                throw new PhotoUploadException(PhotoErrorCode.S3_UPLOAD_FAILED);
+            }
+        }
+
+        return String.format("https://%s.s3.%s.amazonaws.com/%s",
+                bucketName, "ap-northeast-2", fileName);
     }
 }
