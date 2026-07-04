@@ -6,12 +6,14 @@ import com.myongjithon.syncday.domain.user.AppUser;
 import com.myongjithon.syncday.domain.user.AppUserRepository;
 import com.myongjithon.syncday.global.exception.PhotoErrorCode;
 import com.myongjithon.syncday.global.exception.PhotoUploadException;
+import com.myongjithon.syncday.global.util.FaceMosaicUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import software.amazon.awssdk.core.sync.RequestBody;
+import software.amazon.awssdk.services.rekognition.RekognitionClient;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
@@ -28,6 +30,11 @@ public class PhotoService {
 
     private final PhotoRepository photoRepository;
     private final AppUserRepository appUserRepository;
+    private final S3Client s3Client;
+    private final RekognitionClient rekognitionClient;
+
+    @Value("${aws.s3.bucket}")
+    private String bucketName;
 
     @Transactional
     public PhotoUploadResponse uploadPhoto(UUID userId, MultipartFile file, boolean isPrivacyMode) {
@@ -68,14 +75,14 @@ public class PhotoService {
         }
     }
 
-    private final S3Client s3Client;
-
-    @Value("${aws.s3.bucket}")
-    private String bucketName;
-
-    // 기존 uploadToS3 교체
     private String uploadToS3(MultipartFile file, boolean isPrivacyMode) {
         try {
+            byte[] imageBytes = file.getBytes();
+
+            if (isPrivacyMode) {
+                imageBytes = FaceMosaicUtil.applyMosaic(imageBytes, rekognitionClient);
+            }
+
             String fileName = UUID.randomUUID() + "_" + file.getOriginalFilename();
 
             PutObjectRequest request = PutObjectRequest.builder()
@@ -84,7 +91,7 @@ public class PhotoService {
                     .contentType(file.getContentType())
                     .build();
 
-            s3Client.putObject(request, RequestBody.fromBytes(file.getBytes()));
+            s3Client.putObject(request, RequestBody.fromBytes(imageBytes));
 
             return String.format("https://%s.s3.%s.amazonaws.com/%s",
                     bucketName, "ap-northeast-2", fileName);
