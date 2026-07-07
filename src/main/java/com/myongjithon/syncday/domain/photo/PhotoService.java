@@ -75,29 +75,33 @@ public class PhotoService {
 
     private String uploadToS3(MultipartFile file, boolean isPrivacyMode) {
         byte[] imageBytes;
+        String contentType = file.getContentType();
+
+        // 1단계: 파일 읽기 + 이미지 처리 (실패 시 IMAGE_PROCESSING_FAILED)
         try {
             imageBytes = file.getBytes();
 
             if (isPrivacyMode) {
                 imageBytes = FaceMosaicUtil.applyMosaic(imageBytes, rekognitionClient);
+                contentType = "image/jpeg";
             }
         } catch (IOException e) {
-            throw new PhotoUploadException(PhotoErrorCode.S3_UPLOAD_FAILED);
+            throw new PhotoUploadException(PhotoErrorCode.IMAGE_PROCESSING_FAILED);
         }
 
-        String fileName = UUID.randomUUID() + "_" + file.getOriginalFilename();
+        String extension = isPrivacyMode ? "jpg" : extractExtension(file.getOriginalFilename());
+        String fileName = UUID.randomUUID() + "." + extension;
 
         PutObjectRequest request = PutObjectRequest.builder()
                 .bucket(bucketName)
                 .key(fileName)
-                .contentType(file.getContentType())
+                .contentType(contentType)
                 .build();
 
-        // 1차 시도
+        // 2단계: S3 업로드 (실패 시 S3_UPLOAD_FAILED)
         try {
             s3Client.putObject(request, RequestBody.fromBytes(imageBytes));
         } catch (Exception firstAttemptException) {
-            // 실패 시 1회 재시도
             try {
                 s3Client.putObject(request, RequestBody.fromBytes(imageBytes));
             } catch (Exception secondAttemptException) {
@@ -107,5 +111,16 @@ public class PhotoService {
 
         return String.format("https://%s.s3.%s.amazonaws.com/%s",
                 bucketName, "ap-northeast-2", fileName);
+    }
+
+    private String extractExtension(String originalFilename) {
+        if (originalFilename == null || !originalFilename.contains(".")) {
+            return "jpg";
+        }
+        String ext = originalFilename.substring(originalFilename.lastIndexOf(".") + 1).toLowerCase();
+        if (ext.equals("jpg") || ext.equals("jpeg") || ext.equals("png")) {
+            return ext;
+        }
+        return "jpg";
     }
 }
