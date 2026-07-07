@@ -22,6 +22,13 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(errorCode.getStatus()).body(errorResponse);
     }
 
+    @ExceptionHandler(MatchException.class)
+    public ResponseEntity<ErrorResponse> handleMatchException(MatchException e) {
+        MatchErrorCode errorCode = e.getErrorCode();
+        ErrorResponse errorResponse = new ErrorResponse(errorCode.name(), errorCode.getMessage());
+        return ResponseEntity.status(errorCode.getStatus()).body(errorResponse);
+    }
+
     @Getter
     static class ErrorResponse {
         private final String code;

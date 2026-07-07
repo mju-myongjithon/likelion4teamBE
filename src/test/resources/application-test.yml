@@ -1,0 +1,19 @@
+# 테스트 전용 프로파일. CI(.env 없음)에서도 컨텍스트가 뜨도록 더미 기본값을 채운다.
+# 실제 DB 연결은 @AutoConfigureEmbeddedDatabase(Zonky) 가 대체하고,
+# AWS/ai-service 클라이언트는 build() 시점에 네트워크를 타지 않으므로 더미 값이면 충분하다.
+
+DB_URL: jdbc:postgresql://localhost:5432/ignored
+DB_USERNAME: test
+DB_PASSWORD: test
+
+AWS_S3_BUCKET: test-bucket
+AWS_ACCESS_KEY_ID: test
+AWS_SECRET_ACCESS_KEY: test
+AWS_REGION: ap-northeast-2
+
+AI_SERVICE_URL: http://localhost:8000
+
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
