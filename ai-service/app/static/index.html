@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sync.day — AI 파트 테스트</title>
+<style>
+  :root {
+    --accent: #ff8a3d;
+    --bg: #faf7f5;
+    --card: #ffffff;
+    --border: #eee0d8;
+    --text: #2b2320;
+    --muted: #8a7d75;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 24px;
+  }
+  h1 { font-size: 22px; margin-bottom: 4px; }
+  .subtitle { color: var(--muted); margin-bottom: 24px; font-size: 14px; }
+  .columns { display: flex; gap: 20px; flex-wrap: wrap; }
+  .panel {
+    flex: 1;
+    min-width: 320px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 20px;
+  }
+  .panel h2 { font-size: 16px; margin-top: 0; }
+  input[type="file"] { width: 100%; margin-bottom: 12px; }
+  .thumbs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+  .thumbs img { width: 56px; height: 56px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); }
+  button {
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 10px;
+    padding: 10px 16px;
+    font-size: 14px;
+    cursor: pointer;
+    width: 100%;
+  }
+  button:disabled { background: #e5ddd6; cursor: not-allowed; }
+  button.secondary { background: #2b2320; margin-top: 10px; }
+  .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .tag {
+    background: #fff3ea;
+    color: var(--accent);
+    border: 1px solid #ffd9b8;
+    border-radius: 999px;
+    padding: 3px 10px;
+    font-size: 12px;
+  }
+  .summary { margin-top: 10px; font-size: 13px; line-height: 1.5; color: var(--text); }
+  .status { font-size: 12px; color: var(--muted); margin-top: 8px; min-height: 16px; }
+  .result-card {
+    margin-top: 24px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 24px;
+    text-align: center;
+  }
+  .score { font-size: 40px; font-weight: 700; color: var(--accent); }
+  .description { margin: 12px 0; font-size: 15px; line-height: 1.6; }
+  .icebreaker {
+    margin-top: 16px;
+    background: #fff3ea;
+    border-radius: 12px;
+    padding: 12px 16px;
+    font-size: 14px;
+    display: inline-block;
+  }
+  pre { background: #fafafa; padding: 10px; border-radius: 8px; overflow-x: auto; font-size: 12px; }
+</style>
+</head>
+<body>
+  <h1>Sync.day — AI 파트(F2/F4/F6) 로컬 테스트</h1>
+  <p class="subtitle">사진 업로드 → 특징 추출(F2) → 유사도(참고용) → 설명 생성(F4) → 아이스브레이킹(F6) 전체 흐름을 브라우저에서 확인합니다.</p>
+
+  <div class="columns">
+    <div class="panel">
+      <h2>나의 오늘 하루</h2>
+      <input type="file" id="filesA" accept="image/*" multiple />
+      <div class="thumbs" id="thumbsA"></div>
+      <button id="analyzeA">오늘의 나를 분석하기</button>
+      <div class="status" id="statusA"></div>
+      <div id="tagsA"></div>
+    </div>
+
+    <div class="panel">
+      <h2>상대방의 오늘 하루 (테스트용)</h2>
+      <input type="file" id="filesB" accept="image/*" multiple />
+      <div class="thumbs" id="thumbsB"></div>
+      <button id="analyzeB">상대방 분석하기</button>
+      <div class="status" id="statusB"></div>
+      <div id="tagsB"></div>
+    </div>
+  </div>
+
+  <button class="secondary" id="matchBtn" disabled>두 사람 매칭 결과 보기</button>
+  <div class="status" id="statusMatch"></div>
+
+  <div class="result-card" id="resultCard" style="display:none;">
+    <div class="score" id="scoreOut"></div>
+    <div class="description" id="descOut"></div>
+    <div class="icebreaker" id="iceOut"></div>
+  </div>
+
+  <script>
+    const state = { A: null, B: null };
+
+    function resizeToDataUrl(file, maxSize = 1024, quality = 0.82) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        const reader = new FileReader();
+        reader.onload = (e) => { img.src = e.target.result; };
+        reader.onerror = reject;
+        img.onload = () => {
+          let { width, height } = img;
+          if (width > height && width > maxSize) {
+            height = Math.round(height * (maxSize / width));
+            width = maxSize;
+          } else if (height > maxSize) {
+            width = Math.round(width * (maxSize / height));
+            height = maxSize;
+          }
+          const canvas = document.createElement("canvas");
+          canvas.width = width;
+          canvas.height = height;
+          canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL("image/jpeg", quality));
+        };
+        img.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    }
+
+    function setupPanel(key, fileInputId, thumbsId, buttonId, statusId, tagsId) {
+      const fileInput = document.getElementById(fileInputId);
+      const thumbs = document.getElementById(thumbsId);
+      const button = document.getElementById(buttonId);
+      const status = document.getElementById(statusId);
+      const tagsBox = document.getElementById(tagsId);
+
+      fileInput.addEventListener("change", () => {
+        thumbs.innerHTML = "";
+        [...fileInput.files].forEach((f) => {
+          const url = URL.createObjectURL(f);
+          const img = document.createElement("img");
+          img.src = url;
+          thumbs.appendChild(img);
+        });
+      });
+
+      button.addEventListener("click", async () => {
+        const files = [...fileInput.files];
+        if (files.length < 3) {
+          status.textContent = "사진을 최소 3장 선택해주세요.";
+          return;
+        }
+        button.disabled = true;
+        status.textContent = "분석 중... (GPT-4o 호출, 몇 초 걸릴 수 있어요)";
+        tagsBox.innerHTML = "";
+        try {
+          const dataUrls = await Promise.all(files.map((f) => resizeToDataUrl(f)));
+          const res = await fetch("/api/v1/features", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              userId: key,
+              date: new Date().toISOString().slice(0, 10),
+              imageUrls: dataUrls,
+            }),
+          });
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.detail || `HTTP ${res.status}`);
+          }
+          const data = await res.json();
+          state[key] = data.features;
+          status.textContent = "분석 완료!";
+          renderTags(tagsBox, data.features);
+          maybeEnableMatch();
+        } catch (e) {
+          status.textContent = "실패: " + e.message;
+        } finally {
+          button.disabled = false;
+        }
+      });
+    }
+
+    function renderTags(box, features) {
+      const groups = ["scene", "timeOfDay", "mood", "color", "activity"];
+      const wrap = document.createElement("div");
+      wrap.className = "tags";
+      groups.forEach((g) => (features[g] || []).forEach((v) => {
+        const span = document.createElement("span");
+        span.className = "tag";
+        span.textContent = v;
+        wrap.appendChild(span);
+      }));
+      box.appendChild(wrap);
+      const summary = document.createElement("div");
+      summary.className = "summary";
+      summary.textContent = features.summary || "";
+      box.appendChild(summary);
+    }
+
+    function maybeEnableMatch() {
+      document.getElementById("matchBtn").disabled = !(state.A && state.B);
+    }
+
+    setupPanel("A", "filesA", "thumbsA", "analyzeA", "statusA", "tagsA");
+    setupPanel("B", "filesB", "thumbsB", "analyzeB", "statusB", "tagsB");
+
+    document.getElementById("matchBtn").addEventListener("click", async () => {
+      const status = document.getElementById("statusMatch");
+      const card = document.getElementById("resultCard");
+      status.textContent = "매칭 결과 생성 중...";
+      card.style.display = "none";
+      try {
+        const simRes = await fetch("/api/v1/_debug/similarity", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userA: state.A, userB: state.B }),
+        });
+        const { score } = await simRes.json();
+
+        const [descRes, iceRes] = await Promise.all([
+          fetch("/api/v1/description", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ similarityScore: score, userA: state.A, userB: state.B }),
+          }),
+          fetch("/api/v1/icebreaker", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ userA: state.A, userB: state.B }),
+          }),
+        ]);
+        const { description } = await descRes.json();
+        const { question } = await iceRes.json();
+
+        document.getElementById("scoreOut").textContent = score + "%";
+        document.getElementById("descOut").textContent = description;
+        document.getElementById("iceOut").textContent = question;
+        card.style.display = "block";
+        status.textContent = "";
+      } catch (e) {
+        status.textContent = "실패: " + e.message;
+      }
+    });
+  </script>
+</body>
+</html>
