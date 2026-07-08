@@ -5,6 +5,7 @@ import com.myongjithon.syncday.domain.analysis.dto.AiFeatureResponse;
 import com.myongjithon.syncday.global.exception.AnalysisErrorCode;
 import com.myongjithon.syncday.global.exception.AnalysisException;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -17,6 +18,7 @@ import java.util.UUID;
 /**
  * ai-service의 F2(POST /api/v1/features)를 호출한다.
  */
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class AiServiceClient {
@@ -38,6 +40,7 @@ public class AiServiceClient {
                     .retrieve()
                     .body(AiFeatureResponse.class);
         } catch (RestClientException e) {
+            log.error("ai-service 호출 실패", e);
             throw new AnalysisException(AnalysisErrorCode.AI_SERVICE_UNAVAILABLE);
         }
     }

@@ -11,6 +11,7 @@ import com.myongjithon.syncday.domain.user.AppUserRepository;
 import com.myongjithon.syncday.global.exception.AnalysisErrorCode;
 import com.myongjithon.syncday.global.exception.AnalysisException;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,6 +24,7 @@ import java.util.UUID;
  * F1(사진 업로드)과 F2(AI 특징 추출, ai-service)를 잇는 오케스트레이션 서비스.
  * "오늘의 나를 분석하기" 버튼이 호출하는 지점.
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class AnalysisService {
@@ -31,6 +33,7 @@ public class AnalysisService {
     private final AppUserRepository appUserRepository;
     private final AnalysisResultRepository analysisResultRepository;
     private final AiServiceClient aiServiceClient;
+    private final S3ImageFetcher s3ImageFetcher;
     private final ObjectMapper objectMapper;
 
     @Transactional
@@ -50,11 +53,14 @@ public class AnalysisService {
             throw new AnalysisException(AnalysisErrorCode.PHOTO_COUNT_INSUFFICIENT);
         }
 
-        List<String> imageUrls = todayPhotos.stream()
+        // syncday-photos 버킷이 private라 URL만 넘기면 ai-service가 다운로드를 못 한다.
+        // BE가 대신 S3에서 읽어와 base64로 변환해서 사진 내용물 자체를 넘긴다.
+        List<String> imageDataUris = todayPhotos.stream()
                 .map(Photo::getImageUrl)
+                .map(s3ImageFetcher::toDataUri)
                 .toList();
 
-        AiFeatureResponse aiResponse = aiServiceClient.extractFeatures(userId, today, imageUrls);
+        AiFeatureResponse aiResponse = aiServiceClient.extractFeatures(userId, today, imageDataUris);
 
         AnalysisResult analysisResult = AnalysisResult.builder()
                 .user(user)
@@ -73,6 +79,7 @@ public class AnalysisService {
         try {
             return objectMapper.writeValueAsString(aiResponse.getFeatures());
         } catch (JsonProcessingException e) {
+            log.error("features 직렬화 실패", e);
             throw new AnalysisException(AnalysisErrorCode.AI_SERVICE_UNAVAILABLE);
         }
     }
