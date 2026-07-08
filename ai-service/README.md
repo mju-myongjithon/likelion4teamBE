@@ -3,17 +3,7 @@
 강지원 담당: 사진 특징 추출(F2), AI 설명 카드 생성(F4), 아이스브레이킹 질문 생성(F6).
 Spring Boot BE가 REST로 호출하는 독립 FastAPI 서비스입니다. (F1 업로드/S3, F3 매칭, F5/F7 공개·스트릭은 BE 담당)
 
-## 실행 방법 (Docker, 추천)
-
-```bash
-cp .env.example .env            # GEMINI_API_KEY 채워넣기 (무료 발급: https://aistudio.google.com/apikey)
-docker compose up --build
-```
-
-브라우저에서 `http://localhost:8000` 열면 사진 업로드 → 분석 → 매칭 결과까지 전체 흐름을 눈으로 테스트할 수 있는 페이지가 뜹니다.
-(`app/static/index.html`, 팀 데모용이 아니라 AI 파트 개발/테스트 전용 화면입니다. 실제 FE 화면은 박지훈님 담당)
-
-## 실행 방법 (로컬 venv)
+## 실행 방법
 
 ```bash
 python -m venv .venv

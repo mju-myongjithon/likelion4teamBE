@@ -1,6 +1,5 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 
 from app.schemas import (
     DescriptionRequest,
@@ -69,7 +68,3 @@ def debug_similarity(req: SimilarityRequest):
     """F3(BE 담당)를 흉내내는 로컬 데모/테스트용 엔드포인트. 실제 매칭에는 사용하지 않는다."""
     score = calculate_similarity(req.userA, req.userB)
     return SimilarityResponse(score=score)
-
-
-# 로컬 브라우저 테스트용 정적 페이지. API 라우트들 뒤에 마운트해야 경로 충돌이 없다.
-app.mount("/", StaticFiles(directory="app/static", html=True), name="static")
