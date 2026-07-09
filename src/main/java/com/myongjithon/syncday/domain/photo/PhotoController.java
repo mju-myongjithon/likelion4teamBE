@@ -9,6 +9,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -37,6 +38,15 @@ public class PhotoController {
             @RequestParam UUID userId
     ) {
         PhotoStatusResponse response = photoService.getTodayStatus(userId);
+        return ResponseEntity.ok(response);
+    }
+
+    @Operation(summary = "오늘 업로드한 사진 목록 조회", description = "오늘 업로드한 사진들의 URL과 업로드 시각을 반환합니다")
+    @GetMapping
+    public ResponseEntity<List<PhotoUploadResponse>> getTodayPhotos(
+            @RequestParam UUID userId
+    ) {
+        List<PhotoUploadResponse> response = photoService.getTodayPhotos(userId);
         return ResponseEntity.ok(response);
     }
 }

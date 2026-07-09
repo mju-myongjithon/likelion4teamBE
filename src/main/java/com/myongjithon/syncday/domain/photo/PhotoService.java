@@ -20,6 +20,7 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import java.io.IOException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -122,5 +123,18 @@ public class PhotoService {
             return ext;
         }
         return "jpg";
+    }
+
+    public List<PhotoUploadResponse> getTodayPhotos(UUID userId) {
+        LocalDateTime startOfDay = LocalDate.now().atStartOfDay();
+        LocalDateTime endOfDay = startOfDay.plusDays(1).minusNanos(1);
+
+        List<Photo> photos = photoRepository.findByUser_UserIdAndUploadedAtBetween(
+                userId, startOfDay, endOfDay
+        );
+
+        return photos.stream()
+                .map(PhotoUploadResponse::from)
+                .toList();
     }
 }
