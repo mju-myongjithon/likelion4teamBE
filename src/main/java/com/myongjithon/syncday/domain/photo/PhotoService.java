@@ -42,6 +42,15 @@ public class PhotoService {
         AppUser user = appUserRepository.findById(userId)
                 .orElseThrow(() -> new PhotoUploadException(PhotoErrorCode.USER_NOT_FOUND));
 
+        LocalDateTime startOfDay = LocalDate.now().atStartOfDay();
+        LocalDateTime endOfDay = startOfDay.plusDays(1).minusNanos(1);
+        int todayCount = photoRepository.countByUser_UserIdAndUploadedAtBetween(userId, startOfDay, endOfDay);
+
+        if (todayCount >= Photo.MAX_PHOTO_COUNT) {
+            throw new PhotoUploadException(PhotoErrorCode.PHOTO_COUNT_EXCEEDED);
+        }
+
+
         String imageUrl = uploadToS3(file, isPrivacyMode);
 
         Photo photo = Photo.builder()
