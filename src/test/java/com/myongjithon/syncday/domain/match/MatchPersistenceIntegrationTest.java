@@ -1,7 +1,7 @@
 package com.myongjithon.syncday.domain.match;
 
-import com.myongjithon.syncday.domain.analysis.DailyAnalysis;
-import com.myongjithon.syncday.domain.analysis.DailyAnalysisRepository;
+import com.myongjithon.syncday.domain.analysis.AnalysisResult;
+import com.myongjithon.syncday.domain.analysis.AnalysisResultRepository;
 import com.myongjithon.syncday.domain.user.AppUser;
 import io.zonky.test.db.AutoConfigureEmbeddedDatabase;
 import org.junit.jupiter.api.DisplayName;
@@ -22,7 +22,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * 실제 PostgreSQL(Zonky embedded, Docker 불필요) 위에서 JPA 매핑과 제약을 검증한다.
- * text[] / jsonb 컬럼, (user_a,user_b,date) 유니크 제약, 파생 쿼리가 대상.
+ * analysis_result 의 features_json, match 의 jsonb 컬럼과 (user_a,user_b,date) 유니크 제약, 파생 쿼리가 대상.
  */
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
@@ -39,41 +39,41 @@ class MatchPersistenceIntegrationTest {
     @Autowired
     private TestEntityManager em;
     @Autowired
-    private DailyAnalysisRepository dailyAnalysisRepository;
+    private AnalysisResultRepository analysisResultRepository;
     @Autowired
     private MatchRepository matchRepository;
 
     private static final LocalDate TODAY = LocalDate.of(2026, 7, 7);
 
+    private static final String FEATURES_JSON = """
+            {"scene":[{"category":"카페","detail":"홍대 감성 카페"}],
+             "timeOfDay":["오후"],"mood":["차분함"],"color":["파란 계열"],
+             "activity":[{"category":"공부","detail":"과제"}],
+             "summary":"카페에서 과제를 하며 보낸 하루"}
+            """;
+
     @Test
-    @DisplayName("daily_analysis 의 text[] 와 jsonb 컬럼이 왕복 저장된다")
-    void textArrayAndJsonbRoundTrip() {
+    @DisplayName("analysis_result 의 features_json 이 한글 포함 그대로 왕복 저장된다")
+    void featuresJsonRoundTrip() {
         AppUser user = persistUser("인문", "타깃");
-        DailyAnalysis analysis = DailyAnalysis.builder()
+        em.persist(AnalysisResult.builder()
                 .user(user)
-                .date(TODAY)
-                .sceneTags(List.of("카페", "야외"))
-                .timeOfDay("오후")
-                .mood("차분함")
-                .dominantColor("블루")
-                .activityTags(List.of("공부", "산책"))
-                .rawAiResponse("{\"model\":\"gpt-4o\",\"confidence\":0.91}")
-                .build();
-        em.persist(analysis);
+                .analysisDate(TODAY)
+                .featuresJson(FEATURES_JSON)
+                .build());
         em.flush();
         em.clear();
 
-        DailyAnalysis found = dailyAnalysisRepository
-                .findByUser_UserIdAndDate(user.getUserId(), TODAY)
+        AnalysisResult found = analysisResultRepository
+                .findByUser_UserIdAndAnalysisDate(user.getUserId(), TODAY)
                 .orElseThrow();
 
-        assertThat(found.getSceneTags()).containsExactly("카페", "야외");
-        assertThat(found.getActivityTags()).containsExactly("공부", "산책");
-        assertThat(found.getRawAiResponse()).contains("gpt-4o");
+        assertThat(found.getFeaturesJson()).contains("홍대 감성 카페", "파란 계열");
+        assertThat(found.getCreatedAt()).isNotNull();
     }
 
     @Test
-    @DisplayName("findByDateAndUser_CampusNot 은 반대 캠퍼스 분석만 반환한다")
+    @DisplayName("findByAnalysisDateAndUser_CampusNot 은 반대 캠퍼스 분석만 반환한다")
     void findsOppositeCampusOnly() {
         AppUser humanities = persistUser("인문", "인문A");
         AppUser science = persistUser("자연", "자연B");
@@ -84,8 +84,8 @@ class MatchPersistenceIntegrationTest {
         em.flush();
         em.clear();
 
-        List<DailyAnalysis> candidates =
-                dailyAnalysisRepository.findByDateAndUser_CampusNot(TODAY, "인문");
+        List<AnalysisResult> candidates =
+                analysisResultRepository.findByAnalysisDateAndUser_CampusNot(TODAY, "인문");
 
         assertThat(candidates).hasSize(1);
         assertThat(candidates.get(0).getUser().getCampus()).isEqualTo("자연");
@@ -131,15 +131,10 @@ class MatchPersistenceIntegrationTest {
     }
 
     private void persistAnalysis(AppUser user) {
-        em.persist(DailyAnalysis.builder()
+        em.persist(AnalysisResult.builder()
                 .user(user)
-                .date(TODAY)
-                .sceneTags(List.of("카페"))
-                .timeOfDay("오후")
-                .mood("차분함")
-                .dominantColor("블루")
-                .activityTags(List.of("공부"))
-                .rawAiResponse("{}")
+                .analysisDate(TODAY)
+                .featuresJson(FEATURES_JSON)
                 .build());
     }
 }

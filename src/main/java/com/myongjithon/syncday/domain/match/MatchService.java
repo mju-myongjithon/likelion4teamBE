@@ -2,8 +2,9 @@ package com.myongjithon.syncday.domain.match;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.myongjithon.syncday.domain.analysis.DailyAnalysis;
-import com.myongjithon.syncday.domain.analysis.DailyAnalysisRepository;
+import com.myongjithon.syncday.domain.analysis.AnalysisResult;
+import com.myongjithon.syncday.domain.analysis.AnalysisResultRepository;
+import com.myongjithon.syncday.domain.analysis.dto.FeaturesDto;
 import com.myongjithon.syncday.domain.match.dto.MatchResponse;
 import com.myongjithon.syncday.domain.match.similarity.AnalysisFeatures;
 import com.myongjithon.syncday.domain.match.similarity.SimilarityCalculator;
@@ -27,7 +28,7 @@ import java.util.stream.Stream;
 @RequiredArgsConstructor
 public class MatchService {
 
-    private final DailyAnalysisRepository dailyAnalysisRepository;
+    private final AnalysisResultRepository analysisResultRepository;
     private final MatchRepository matchRepository;
     private final SimilarityCalculator similarityCalculator;
     private final ObjectMapper objectMapper;
@@ -38,7 +39,7 @@ public class MatchService {
      */
     @Transactional
     public MatchResponse createMatchForUser(UUID userId, LocalDate date) {
-        DailyAnalysis target = dailyAnalysisRepository.findByUser_UserIdAndDate(userId, date)
+        AnalysisResult target = analysisResultRepository.findByUser_UserIdAndAnalysisDate(userId, date)
                 .orElseThrow(() -> new MatchException(MatchErrorCode.ANALYSIS_NOT_FOUND));
 
         // 멱등성: 오늘 이미 매칭됐다면 재계산 없이 기존 매칭 반환.
@@ -54,8 +55,8 @@ public class MatchService {
                 .flatMap(m -> Stream.of(m.getUserA().getUserId(), m.getUserB().getUserId()))
                 .collect(Collectors.toSet());
 
-        List<DailyAnalysis> candidates = dailyAnalysisRepository
-                .findByDateAndUser_CampusNot(date, targetUser.getCampus()).stream()
+        List<AnalysisResult> candidates = analysisResultRepository
+                .findByAnalysisDateAndUser_CampusNot(date, targetUser.getCampus()).stream()
                 .filter(candidate -> !alreadyMatched.contains(candidate.getUser().getUserId()))
                 .toList();
 
@@ -63,12 +64,12 @@ public class MatchService {
             throw new MatchException(MatchErrorCode.NO_MATCH_CANDIDATE);
         }
 
-        AnalysisFeatures targetFeatures = target.toFeatures();
+        AnalysisFeatures targetFeatures = toFeatures(target);
 
-        DailyAnalysis best = null;
+        AnalysisResult best = null;
         SimilarityResult bestResult = null;
-        for (DailyAnalysis candidate : candidates) {
-            SimilarityResult result = similarityCalculator.calculate(targetFeatures, candidate.toFeatures());
+        for (AnalysisResult candidate : candidates) {
+            SimilarityResult result = similarityCalculator.calculate(targetFeatures, toFeatures(candidate));
             if (bestResult == null || result.totalScore() > bestResult.totalScore()) {
                 best = candidate;
                 bestResult = result;
@@ -93,6 +94,16 @@ public class MatchService {
         Match match = matchRepository.findByDateAndParticipant(date, userId)
                 .orElseThrow(() -> new MatchException(MatchErrorCode.NO_MATCH_CANDIDATE));
         return MatchResponse.of(match, userId);
+    }
+
+    /** F2가 통짜 JSON으로 저장한 features를 유사도 계산 입력으로 되돌린다. */
+    private AnalysisFeatures toFeatures(AnalysisResult analysis) {
+        try {
+            FeaturesDto features = objectMapper.readValue(analysis.getFeaturesJson(), FeaturesDto.class);
+            return AnalysisFeatures.from(features);
+        } catch (JsonProcessingException e) {
+            throw new MatchException(MatchErrorCode.FEATURES_DESERIALIZATION_FAILED);
+        }
     }
 
     private String serialize(SimilarityResult result) {
