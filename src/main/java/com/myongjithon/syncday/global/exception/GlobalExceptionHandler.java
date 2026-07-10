@@ -15,6 +15,13 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(errorCode.getStatus()).body(errorResponse);
     }
 
+    @ExceptionHandler(AnalysisException.class)
+    public ResponseEntity<ErrorResponse> handleAnalysisException(AnalysisException e) {
+        AnalysisErrorCode errorCode = e.getErrorCode();
+        ErrorResponse errorResponse = new ErrorResponse(errorCode.name(), errorCode.getMessage());
+        return ResponseEntity.status(errorCode.getStatus()).body(errorResponse);
+    }
+
     @Getter
     static class ErrorResponse {
         private final String code;
