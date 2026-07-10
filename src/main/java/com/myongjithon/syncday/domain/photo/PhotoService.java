@@ -42,6 +42,13 @@ public class PhotoService {
         AppUser user = appUserRepository.findById(userId)
                 .orElseThrow(() -> new PhotoUploadException(PhotoErrorCode.USER_NOT_FOUND));
 
+        TodayRange today = getTodayRange();
+        int todayCount = photoRepository.countByUser_UserIdAndUploadedAtBetween(userId, today.start(), today.end());
+
+        if (todayCount >= Photo.MAX_PHOTO_COUNT) {
+            throw new PhotoUploadException(PhotoErrorCode.PHOTO_COUNT_EXCEEDED);
+        }
+
         String imageUrl = uploadToS3(file, isPrivacyMode);
 
         Photo photo = Photo.builder()
@@ -56,14 +63,32 @@ public class PhotoService {
     }
 
     public PhotoStatusResponse getTodayStatus(UUID userId) {
-        LocalDateTime startOfDay = LocalDate.now().atStartOfDay();
-        LocalDateTime endOfDay = startOfDay.plusDays(1).minusNanos(1);
+        TodayRange today = getTodayRange();
 
         int count = photoRepository.countByUser_UserIdAndUploadedAtBetween(
-                userId, startOfDay, endOfDay
+                userId, today.start(), today.end()
         );
 
         return PhotoStatusResponse.of(count);
+    }
+
+    public List<PhotoUploadResponse> getTodayPhotos(UUID userId) {
+        TodayRange today = getTodayRange();
+
+        List<Photo> photos = photoRepository.findByUser_UserIdAndUploadedAtBetween(
+                userId, today.start(), today.end()
+        );
+
+        return photos.stream()
+                .map(PhotoUploadResponse::from)
+                .toList();
+    }
+
+    private record TodayRange(LocalDateTime start, LocalDateTime end) {}
+
+    private TodayRange getTodayRange() {
+        LocalDateTime start = LocalDate.now().atStartOfDay();
+        return new TodayRange(start, start.plusDays(1).minusNanos(1));
     }
 
     private void validateImageFormat(MultipartFile file) {
@@ -78,7 +103,6 @@ public class PhotoService {
         byte[] imageBytes;
         String contentType = file.getContentType();
 
-        // 1단계: 파일 읽기 + 이미지 처리 (실패 시 IMAGE_PROCESSING_FAILED)
         try {
             imageBytes = file.getBytes();
 
@@ -99,7 +123,6 @@ public class PhotoService {
                 .contentType(contentType)
                 .build();
 
-        // 2단계: S3 업로드 (실패 시 S3_UPLOAD_FAILED)
         try {
             s3Client.putObject(request, RequestBody.fromBytes(imageBytes));
         } catch (Exception firstAttemptException) {
@@ -123,18 +146,5 @@ public class PhotoService {
             return ext;
         }
         return "jpg";
-    }
-
-    public List<PhotoUploadResponse> getTodayPhotos(UUID userId) {
-        LocalDateTime startOfDay = LocalDate.now().atStartOfDay();
-        LocalDateTime endOfDay = startOfDay.plusDays(1).minusNanos(1);
-
-        List<Photo> photos = photoRepository.findByUser_UserIdAndUploadedAtBetween(
-                userId, startOfDay, endOfDay
-        );
-
-        return photos.stream()
-                .map(PhotoUploadResponse::from)
-                .toList();
     }
 }

@@ -16,6 +16,7 @@ import java.util.UUID;
 public class Photo {
 
     public static final int REQUIRED_PHOTO_COUNT = 3;
+    public static final int MAX_PHOTO_COUNT = 10;
 
     @Id
     @GeneratedValue
