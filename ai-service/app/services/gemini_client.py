@@ -1,5 +1,6 @@
 import base64
 import json
+import logging
 import re
 import time
 from typing import List, Optional
@@ -9,6 +10,8 @@ from google import genai
 from google.genai import errors as genai_errors
 from google.genai import types
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 from app.config import settings
 from app.prompts import (
@@ -70,10 +73,15 @@ _RETRYABLE_CODES = {429, 500, 503, 504}
 
 
 def _generate_with_retry(**kwargs):
-    """레이트리밋(429)이나 구글 쪽 일시적 장애(5xx)에 걸렸을 때 잠깐 쉬었다가 재시도한다."""
+    """레이트리밋(429)이나 구글 쪽 일시적 장애(5xx)에 걸렸을 때 잠깐 쉬었다가 재시도한다.
+
+    실제 Gemini 호출 횟수를 로그로 남겨서, 할당량이 예상보다 빨리 줄어들 때
+    원인(재시도 증폭)을 추적할 수 있게 한다.
+    """
     client = get_client()
     last_error = None
-    for delay in (*_RETRY_BACKOFF_SECONDS, None):
+    for attempt, delay in enumerate((*_RETRY_BACKOFF_SECONDS, None), start=1):
+        logger.info("Gemini API 호출 시도 %d/%d (model=%s)", attempt, len(_RETRY_BACKOFF_SECONDS) + 1, kwargs.get("model"))
         try:
             return client.models.generate_content(**kwargs)
         except genai_errors.APIError as e:
@@ -118,15 +126,19 @@ def extract_day_features(image_urls: List[str]) -> DayFeatures:
         ),
     )
 
-    # 모델이 스키마에서 벗어난 JSON을 내놓는 드문 경우를 대비해 한 번만 재시도한다.
-    for is_last_try in (False, True):
-        response = _generate_with_retry(**generation_kwargs)
-        try:
-            data = json.loads(response.text)
-            return DayFeatures(**data)
-        except (json.JSONDecodeError, TypeError, ValueError):
-            if is_last_try:
-                raise
+    # 1차 호출: 네트워크/레이트리밋(429, 5xx)에 대해서만 백오프 재시도 (최대 4회)
+    response = _generate_with_retry(**generation_kwargs)
+    try:
+        data = json.loads(response.text)
+        return DayFeatures(**data)
+    except (json.JSONDecodeError, TypeError, ValueError):
+        # 모델이 스키마에서 벗어난 JSON을 내놓는 드문 경우, 백오프 없이 딱 1번만 더 호출한다.
+        # (_generate_with_retry를 또 부르면 재시도가 중첩되어 최악의 경우 호출이 크게 늘어남)
+        logger.warning("특징 추출 응답 파싱 실패, 추가 호출 1회 시도")
+        client = get_client()
+        response = client.models.generate_content(**generation_kwargs)
+        data = json.loads(response.text)
+        return DayFeatures(**data)
 
 
 def generate_description(user_a: DayFeatures, user_b: DayFeatures, score: float) -> str:

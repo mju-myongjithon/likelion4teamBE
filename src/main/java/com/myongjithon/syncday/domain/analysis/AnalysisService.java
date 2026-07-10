@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.myongjithon.syncday.domain.analysis.dto.AiFeatureResponse;
 import com.myongjithon.syncday.domain.analysis.dto.AnalyzeResponse;
+import com.myongjithon.syncday.domain.analysis.dto.FeaturesDto;
 import com.myongjithon.syncday.domain.photo.Photo;
 import com.myongjithon.syncday.domain.photo.PhotoRepository;
 import com.myongjithon.syncday.domain.user.AppUser;
@@ -18,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -38,10 +40,18 @@ public class AnalysisService {
 
     @Transactional
     public AnalyzeResponse analyzeToday(UUID userId) {
+        LocalDate today = LocalDate.now();
+
+        // 이미 오늘 분석한 기록이 있으면 새로 만들지 않고 기존 결과를 그대로 돌려준다.
+        // (버튼을 두 번 누르거나 네트워크 지연으로 중복 호출돼도 중복 레코드가 안 생기게)
+        Optional<AnalysisResult> existing = analysisResultRepository.findByUser_UserIdAndAnalysisDate(userId, today);
+        if (existing.isPresent()) {
+            return toResponse(existing.get());
+        }
+
         AppUser user = appUserRepository.findById(userId)
                 .orElseThrow(() -> new AnalysisException(AnalysisErrorCode.USER_NOT_FOUND));
 
-        LocalDate today = LocalDate.now();
         LocalDateTime startOfDay = today.atStartOfDay();
         LocalDateTime endOfDay = startOfDay.plusDays(1).minusNanos(1);
 
@@ -75,12 +85,30 @@ public class AnalysisService {
         return AnalyzeResponse.of(saved.getAnalysisId(), aiResponse.getFeatures());
     }
 
+    /** 오늘 이미 분석한 결과만 조회한다 (새로 분석하지 않음). 화면 재진입 시 사용. */
+    public AnalyzeResponse getTodayAnalysis(UUID userId) {
+        AnalysisResult result = analysisResultRepository
+                .findByUser_UserIdAndAnalysisDate(userId, LocalDate.now())
+                .orElseThrow(() -> new AnalysisException(AnalysisErrorCode.ANALYSIS_NOT_FOUND));
+        return toResponse(result);
+    }
+
+    private AnalyzeResponse toResponse(AnalysisResult result) {
+        try {
+            FeaturesDto features = objectMapper.readValue(result.getFeaturesJson(), FeaturesDto.class);
+            return AnalyzeResponse.of(result.getAnalysisId(), features);
+        } catch (JsonProcessingException e) {
+            log.error("features 역직렬화 실패", e);
+            throw new AnalysisException(AnalysisErrorCode.FEATURE_SERIALIZE_FAILED);
+        }
+    }
+
     private String toJson(AiFeatureResponse aiResponse) {
         try {
             return objectMapper.writeValueAsString(aiResponse.getFeatures());
         } catch (JsonProcessingException e) {
             log.error("features 직렬화 실패", e);
-            throw new AnalysisException(AnalysisErrorCode.AI_SERVICE_UNAVAILABLE);
+            throw new AnalysisException(AnalysisErrorCode.FEATURE_SERIALIZE_FAILED);
         }
     }
 }

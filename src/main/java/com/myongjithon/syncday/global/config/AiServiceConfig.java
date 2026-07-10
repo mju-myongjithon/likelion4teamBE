@@ -25,7 +25,9 @@ public class AiServiceConfig {
     public RestClient aiServiceRestClient() {
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(10_000);
-        factory.setReadTimeout(60_000); // Gemini 호출이 포함되어 응답이 늦어질 수 있음
+        // Gemini 호출 자체(재시도 백오프 1+3+8초 포함)에 파싱 실패 시 추가 호출까지 겹치면
+        // 60초를 넘을 수 있어 여유 있게 120초로 설정.
+        factory.setReadTimeout(120_000);
         return RestClient.builder()
                 .baseUrl(aiServiceUrl)
                 .requestFactory(factory)

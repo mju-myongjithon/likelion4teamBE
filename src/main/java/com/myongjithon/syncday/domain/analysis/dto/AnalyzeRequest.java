@@ -1,5 +1,6 @@
 package com.myongjithon.syncday.domain.analysis.dto;
 
+import jakarta.validation.constraints.NotNull;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
@@ -12,5 +13,6 @@ import java.util.UUID;
 @NoArgsConstructor
 public class AnalyzeRequest {
 
+    @NotNull
     private UUID userId;
 }
