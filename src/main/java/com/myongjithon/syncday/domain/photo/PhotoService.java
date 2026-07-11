@@ -15,9 +15,13 @@ import org.springframework.web.multipart.MultipartFile;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.rekognition.RekognitionClient;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.presigner.S3Presigner;
+import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 
 import java.io.IOException;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -31,6 +35,7 @@ public class PhotoService {
     private final AppUserRepository appUserRepository;
     private final S3Client s3Client;
     private final RekognitionClient rekognitionClient;
+    private final S3Presigner s3Presigner;
 
     @Value("${aws.s3.bucket}")
     private String bucketName;
@@ -42,24 +47,18 @@ public class PhotoService {
         AppUser user = appUserRepository.findById(userId)
                 .orElseThrow(() -> new PhotoUploadException(PhotoErrorCode.USER_NOT_FOUND));
 
-        TodayRange today = getTodayRange();
-        int todayCount = photoRepository.countByUser_UserIdAndUploadedAtBetween(userId, today.start(), today.end());
-
-        if (todayCount >= Photo.MAX_PHOTO_COUNT) {
-            throw new PhotoUploadException(PhotoErrorCode.PHOTO_COUNT_EXCEEDED);
-        }
-
-        String imageUrl = uploadToS3(file, isPrivacyMode);
+        String s3Key = uploadToS3(file, isPrivacyMode);  // 이제 URL 대신 key를 반환하도록 변경
+        String presignedUrl = generatePresignedUrl(s3Key);
 
         Photo photo = Photo.builder()
                 .user(user)
-                .imageUrl(imageUrl)
+                .s3Key(s3Key)              
                 .isPrivacyMode(isPrivacyMode)
                 .build();
 
         Photo savedPhoto = photoRepository.save(photo);
 
-        return PhotoUploadResponse.from(savedPhoto);
+        return PhotoUploadResponse.from(savedPhoto, presignedUrl);  // 응답엔 presigned URL
     }
 
     public PhotoStatusResponse getTodayStatus(UUID userId) {
@@ -80,7 +79,7 @@ public class PhotoService {
         );
 
         return photos.stream()
-                .map(PhotoUploadResponse::from)
+                .map(photo -> PhotoUploadResponse.from(photo, generatePresignedUrl(photo.getS3Key())))
                 .toList();
     }
 
@@ -133,8 +132,7 @@ public class PhotoService {
             }
         }
 
-        return String.format("https://%s.s3.%s.amazonaws.com/%s",
-                bucketName, "ap-northeast-2", fileName);
+        return fileName;
     }
 
     private String extractExtension(String originalFilename) {
@@ -146,5 +144,19 @@ public class PhotoService {
             return ext;
         }
         return "jpg";
+    }
+
+    private String generatePresignedUrl(String key) {
+        GetObjectRequest getObjectRequest = GetObjectRequest.builder()
+                .bucket(bucketName)
+                .key(key)
+                .build();
+
+        GetObjectPresignRequest presignRequest = GetObjectPresignRequest.builder()
+                .signatureDuration(Duration.ofMinutes(30))  // 30분간 유효
+                .getObjectRequest(getObjectRequest)
+                .build();
+
+        return s3Presigner.presignGetObject(presignRequest).url().toString();
     }
 }

@@ -15,10 +15,10 @@ public class PhotoUploadResponse {
     private String imageUrl;
     private LocalDateTime uploadedAt;
 
-    public static PhotoUploadResponse from(Photo photo) {
+    public static PhotoUploadResponse from(Photo photo, String presignedUrl) {
         return PhotoUploadResponse.builder()
                 .photoId(photo.getPhotoId())
-                .imageUrl(photo.getImageUrl())
+                .imageUrl(presignedUrl)  // 이제 presigned URL을 응답으로 줌
                 .uploadedAt(photo.getUploadedAt())
                 .build();
     }
