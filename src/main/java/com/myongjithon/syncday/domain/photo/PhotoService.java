@@ -20,6 +20,15 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 
+import javax.imageio.IIOImage;
+import javax.imageio.ImageIO;
+import javax.imageio.ImageWriteParam;
+import javax.imageio.ImageWriter;
+import javax.imageio.stream.ImageOutputStream;
+import java.awt.*;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.time.Duration;
 import java.time.LocalDate;
@@ -52,7 +61,7 @@ public class PhotoService {
 
         Photo photo = Photo.builder()
                 .user(user)
-                .s3Key(s3Key)              
+                .s3Key(s3Key)
                 .isPrivacyMode(isPrivacyMode)
                 .build();
 
@@ -83,7 +92,8 @@ public class PhotoService {
                 .toList();
     }
 
-    private record TodayRange(LocalDateTime start, LocalDateTime end) {}
+    private record TodayRange(LocalDateTime start, LocalDateTime end) {
+    }
 
     private TodayRange getTodayRange() {
         LocalDateTime start = LocalDate.now().atStartOfDay();
@@ -105,10 +115,16 @@ public class PhotoService {
         try {
             imageBytes = file.getBytes();
 
+            // 방향 보정은 모자이크 여부와 무관하게 항상 먼저 적용
+            imageBytes = FaceMosaicUtil.correctOrientationOnly(imageBytes);
+
             if (isPrivacyMode) {
                 imageBytes = FaceMosaicUtil.applyMosaic(imageBytes, rekognitionClient);
-                contentType = "image/jpeg";
             }
+
+            imageBytes = resizeAndCompress(imageBytes);
+            contentType = "image/jpeg";
+
         } catch (IOException e) {
             throw new PhotoUploadException(PhotoErrorCode.IMAGE_PROCESSING_FAILED);
         }
@@ -159,4 +175,38 @@ public class PhotoService {
 
         return s3Presigner.presignGetObject(presignRequest).url().toString();
     }
+
+    private byte[] resizeAndCompress(byte[] imageBytes) throws IOException {
+        BufferedImage image = ImageIO.read(new ByteArrayInputStream(imageBytes));
+
+        int maxWidth = 1600;
+        if (image.getWidth() > maxWidth) {
+            double ratio = (double) maxWidth / image.getWidth();
+            int newWidth = maxWidth;
+            int newHeight = (int) (image.getHeight() * ratio);
+
+            BufferedImage resized = new BufferedImage(newWidth, newHeight, BufferedImage.TYPE_INT_RGB);
+            Graphics2D g = resized.createGraphics();
+            g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+            g.drawImage(image, 0, 0, newWidth, newHeight, null);
+            g.dispose();
+            image = resized;
+        }
+
+        // JPEG 압축 품질 85%로 저장
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        ImageWriter writer = ImageIO.getImageWritersByFormatName("jpg").next();
+        ImageWriteParam param = writer.getDefaultWriteParam();
+        param.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);
+        param.setCompressionQuality(0.85f);
+
+        try (ImageOutputStream ios = ImageIO.createImageOutputStream(output)) {
+            writer.setOutput(ios);
+            writer.write(null, new IIOImage(image, null, null), param);
+        }
+        writer.dispose();
+
+        return output.toByteArray();
+    }
+
 }
