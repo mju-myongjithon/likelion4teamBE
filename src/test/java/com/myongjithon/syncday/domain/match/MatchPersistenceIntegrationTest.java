@@ -2,6 +2,7 @@ package com.myongjithon.syncday.domain.match;
 
 import com.myongjithon.syncday.domain.analysis.AnalysisResult;
 import com.myongjithon.syncday.domain.analysis.AnalysisResultRepository;
+import com.myongjithon.syncday.domain.analysis.MatchDecision;
 import com.myongjithon.syncday.domain.user.AppUser;
 import io.zonky.test.db.AutoConfigureEmbeddedDatabase;
 import org.junit.jupiter.api.DisplayName;
@@ -73,22 +74,24 @@ class MatchPersistenceIntegrationTest {
     }
 
     @Test
-    @DisplayName("findByAnalysisDateAndUser_CampusNot 은 반대 캠퍼스 분석만 반환한다")
-    void findsOppositeCampusOnly() {
-        AppUser humanities = persistUser("인문", "인문A");
-        AppUser science = persistUser("자연", "자연B");
-        AppUser humanities2 = persistUser("인문", "인문C");
-        persistAnalysis(humanities);
-        persistAnalysis(science);
-        persistAnalysis(humanities2);
+    @DisplayName("후보 쿼리는 반대 캠퍼스 & 매칭 수락(ACCEPTED)한 유저만 반환한다")
+    void findsOppositeCampusAcceptedOnly() {
+        AppUser humanities = persistUser("인문", "인문A");        // 같은 캠퍼스 → 제외
+        AppUser science = persistUser("자연", "자연B");            // 반대 & 수락 → 포함
+        AppUser scienceUndecided = persistUser("자연", "자연미정"); // 반대지만 미수락(NONE) → 제외
+        AppUser scienceDeclined = persistUser("자연", "자연거부");  // 반대지만 거부(DECLINED) → 제외
+        persistAnalysis(humanities, MatchDecision.ACCEPTED);
+        persistAnalysis(science, MatchDecision.ACCEPTED);
+        persistAnalysis(scienceUndecided, MatchDecision.NONE);
+        persistAnalysis(scienceDeclined, MatchDecision.DECLINED);
         em.flush();
         em.clear();
 
-        List<AnalysisResult> candidates =
-                analysisResultRepository.findByAnalysisDateAndUser_CampusNot(TODAY, "인문");
+        List<AnalysisResult> candidates = analysisResultRepository
+                .findByAnalysisDateAndUser_CampusNotAndMatchDecision(TODAY, "인문", MatchDecision.ACCEPTED);
 
         assertThat(candidates).hasSize(1);
-        assertThat(candidates.get(0).getUser().getCampus()).isEqualTo("자연");
+        assertThat(candidates.get(0).getUser().getNickname()).isEqualTo("자연B");
     }
 
     @Test
@@ -130,11 +133,17 @@ class MatchPersistenceIntegrationTest {
         return em.persist(user);
     }
 
-    private void persistAnalysis(AppUser user) {
-        em.persist(AnalysisResult.builder()
+    private void persistAnalysis(AppUser user, MatchDecision decision) {
+        AnalysisResult analysis = AnalysisResult.builder()
                 .user(user)
                 .analysisDate(TODAY)
                 .featuresJson(FEATURES_JSON)
-                .build());
+                .build();
+        if (decision == MatchDecision.ACCEPTED) {
+            analysis.acceptMatching();
+        } else if (decision == MatchDecision.DECLINED) {
+            analysis.declineMatching();
+        }
+        em.persist(analysis);
     }
 }
