@@ -22,13 +22,19 @@ import java.util.List;
 
 public class FaceMosaicUtil {
 
-    public static byte[] applyMosaic(byte[] originalBytes, RekognitionClient rekognitionClient) throws IOException {
+    // 방향 보정만 수행하는 public 진입점 (PhotoService에서 모자이크 여부와 무관하게 항상 호출)
+    public static byte[] correctOrientationOnly(byte[] originalBytes) throws IOException {
         int orientation = getExifOrientation(originalBytes);
         BufferedImage correctedImage = correctOrientation(originalBytes, orientation);
 
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         ImageIO.write(correctedImage, "jpg", baos);
-        byte[] correctedBytes = baos.toByteArray();
+        return baos.toByteArray();
+    }
+
+    // 이제 이 메서드는 "이미 방향 보정된 이미지"를 받는다고 가정 (중복 보정 제거)
+    public static byte[] applyMosaic(byte[] correctedBytes, RekognitionClient rekognitionClient) throws IOException {
+        BufferedImage correctedImage = ImageIO.read(new ByteArrayInputStream(correctedBytes));
 
         Image awsImage = Image.builder()
                 .bytes(SdkBytes.fromByteArray(correctedBytes))
@@ -81,7 +87,6 @@ public class FaceMosaicUtil {
         int width = image.getWidth();
         int height = image.getHeight();
 
-        // 1단계: 크게 다운스케일 (블록화 방지를 위해 너무 작게는 안 줄임)
         int divisor = 15;
         int smallWidth = Math.max(1, width / divisor);
         int smallHeight = Math.max(1, height / divisor);
@@ -92,7 +97,6 @@ public class FaceMosaicUtil {
         g1.drawImage(image, 0, 0, smallWidth, smallHeight, null);
         g1.dispose();
 
-        // 2단계: 작아진 이미지에 부드러운 컨볼루션 블러 적용 (연산량 적음, 빠름)
         int kernelSize = 5;
         float[] matrix = new float[kernelSize * kernelSize];
         for (int i = 0; i < matrix.length; i++) {
@@ -101,7 +105,6 @@ public class FaceMosaicUtil {
         BufferedImageOp convolve = new ConvolveOp(new Kernel(kernelSize, kernelSize, matrix), ConvolveOp.EDGE_NO_OP, null);
         BufferedImage smallBlurred = convolve.filter(small, null);
 
-        // 3단계: 다시 원본 크기로 확대 (부드럽게 보간되어 자연스러운 블러 완성)
         BufferedImage result = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
         Graphics2D g2 = result.createGraphics();
         g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
@@ -125,6 +128,9 @@ public class FaceMosaicUtil {
 
     private static BufferedImage correctOrientation(byte[] imageBytes, int orientation) throws IOException {
         BufferedImage image = ImageIO.read(new ByteArrayInputStream(imageBytes));
+        if (image == null) {
+            throw new IOException("이미지를 디코딩할 수 없습니다.");
+        }
 
         switch (orientation) {
             case 6: return rotate(image, 90);

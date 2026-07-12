@@ -63,10 +63,8 @@ public class AnalysisService {
             throw new AnalysisException(AnalysisErrorCode.PHOTO_COUNT_INSUFFICIENT);
         }
 
-        // syncday-photos 버킷이 private라 URL만 넘기면 ai-service가 다운로드를 못 한다.
-        // BE가 대신 S3에서 읽어와 base64로 변환해서 사진 내용물 자체를 넘긴다.
         List<String> imageDataUris = todayPhotos.stream()
-                .map(Photo::getImageUrl)
+                .map(Photo::getS3Key)
                 .map(s3ImageFetcher::toDataUri)
                 .toList();
 
