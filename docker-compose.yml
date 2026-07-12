@@ -1,8 +1,7 @@
 services:
   app:
     build: .
-    ports:
-      - "8080:8080"
+    # Caddy가 리버스 프록시로 노출하므로 직접 포트 노출 불필요
     env_file:
       - .env
     depends_on:
@@ -11,8 +10,24 @@ services:
 
   ai-service:
     build: ./ai-service
-    ports:
-      - "8000:8000"
+    # app 컨테이너 내부 통신 전용, 외부 노출 불필요
     env_file:
       - .env
     restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+
+volumes:
+  caddy_data:
+  caddy_config:
