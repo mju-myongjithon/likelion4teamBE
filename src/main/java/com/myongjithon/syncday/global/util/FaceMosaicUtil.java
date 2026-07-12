@@ -128,6 +128,9 @@ public class FaceMosaicUtil {
 
     private static BufferedImage correctOrientation(byte[] imageBytes, int orientation) throws IOException {
         BufferedImage image = ImageIO.read(new ByteArrayInputStream(imageBytes));
+        if (image == null) {
+            throw new IOException("이미지를 디코딩할 수 없습니다.");
+        }
 
         switch (orientation) {
             case 6: return rotate(image, 90);

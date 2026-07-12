@@ -56,7 +56,13 @@ public class PhotoService {
         AppUser user = appUserRepository.findById(userId)
                 .orElseThrow(() -> new PhotoUploadException(PhotoErrorCode.USER_NOT_FOUND));
 
-        String s3Key = uploadToS3(file, isPrivacyMode);  // 이제 URL 대신 key를 반환하도록 변경
+        TodayRange today = getTodayRange();
+        int todayCount = photoRepository.countByUser_UserIdAndUploadedAtBetween(userId, today.start(), today.end());
+        if (todayCount >= Photo.MAX_PHOTO_COUNT) {
+            throw new PhotoUploadException(PhotoErrorCode.PHOTO_COUNT_EXCEEDED);
+        }
+
+        String s3Key = uploadToS3(file, isPrivacyMode);
         String presignedUrl = generatePresignedUrl(s3Key);
 
         Photo photo = Photo.builder()
@@ -67,7 +73,7 @@ public class PhotoService {
 
         Photo savedPhoto = photoRepository.save(photo);
 
-        return PhotoUploadResponse.from(savedPhoto, presignedUrl);  // 응답엔 presigned URL
+        return PhotoUploadResponse.from(savedPhoto, presignedUrl);
     }
 
     public PhotoStatusResponse getTodayStatus(UUID userId) {
@@ -178,6 +184,10 @@ public class PhotoService {
 
     private byte[] resizeAndCompress(byte[] imageBytes) throws IOException {
         BufferedImage image = ImageIO.read(new ByteArrayInputStream(imageBytes));
+
+        if (image == null) {
+            throw new PhotoUploadException(PhotoErrorCode.IMAGE_PROCESSING_FAILED);
+        }
 
         int maxWidth = 1600;
         if (image.getWidth() > maxWidth) {
