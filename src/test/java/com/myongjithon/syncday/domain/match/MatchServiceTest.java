@@ -8,6 +8,7 @@ import com.myongjithon.syncday.domain.analysis.dto.ActivityEntryDto;
 import com.myongjithon.syncday.domain.analysis.dto.FeaturesDto;
 import com.myongjithon.syncday.domain.analysis.dto.SceneEntryDto;
 import com.myongjithon.syncday.domain.match.dto.MatchResponse;
+import com.myongjithon.syncday.domain.match.dto.MatchResultResponse;
 import com.myongjithon.syncday.domain.match.similarity.SimilarityCalculator;
 import com.myongjithon.syncday.domain.user.AppUser;
 import com.myongjithon.syncday.global.exception.MatchException;
@@ -74,8 +75,10 @@ class MatchServiceTest {
                 .thenReturn(List.of(low, high));
         when(matchRepository.save(any(Match.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        MatchResponse response = matchService.createMatchForUser(targetId, TODAY);
+        MatchResultResponse result = matchService.createMatchForUser(targetId, TODAY);
 
+        assertThat(result.status()).isEqualTo(MatchStatus.MATCHED);
+        MatchResponse response = result.match();
         assertThat(response.similarityScore()).isEqualTo(100);
         assertThat(response.partnerId()).isEqualTo(highId);
         assertThat(response.partnerNickname()).isEqualTo("높은유사도");
@@ -98,8 +101,10 @@ class MatchServiceTest {
                 .thenReturn(List.of(partner));
         when(matchRepository.save(any(Match.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        MatchResponse response = matchService.createMatchForUser(targetId, TODAY);
+        MatchResultResponse result = matchService.createMatchForUser(targetId, TODAY);
 
+        assertThat(result.status()).isEqualTo(MatchStatus.MATCHED);
+        MatchResponse response = result.match();
         // scene(0.30) + activity(0.20) 만 일치 → 50점
         assertThat(response.similarityScore()).isEqualTo(50);
         assertThat(response.scoreBreakdown())
@@ -124,8 +129,10 @@ class MatchServiceTest {
         when(matchRepository.findByDateAndParticipant(TODAY, targetId))
                 .thenReturn(Optional.of(existing));
 
-        MatchResponse response = matchService.createMatchForUser(targetId, TODAY);
+        MatchResultResponse result = matchService.createMatchForUser(targetId, TODAY);
 
+        assertThat(result.status()).isEqualTo(MatchStatus.MATCHED);
+        MatchResponse response = result.match();
         assertThat(response.similarityScore()).isEqualTo(72);
         assertThat(response.partnerNickname()).isEqualTo("기존상대");
         verify(matchRepository, never()).save(any());
@@ -145,8 +152,8 @@ class MatchServiceTest {
     }
 
     @Test
-    @DisplayName("반대 캠퍼스 후보가 없으면 NO_MATCH_CANDIDATE")
-    void throwsWhenNoCandidate() {
+    @DisplayName("반대 캠퍼스 후보가 없으면 에러가 아니라 PENDING(매칭 대기)을 반환한다")
+    void returnsPendingWhenNoCandidate() {
         UUID targetId = UUID.randomUUID();
         AnalysisResult target = analysis(targetId, "인문", "타깃",
                 featuresJson("카페", "오후", "공부", "차분함", "파란 계열"));
@@ -158,9 +165,40 @@ class MatchServiceTest {
         when(analysisResultRepository.findByAnalysisDateAndUser_CampusNot(TODAY, "인문"))
                 .thenReturn(List.of());
 
-        assertThatThrownBy(() -> matchService.createMatchForUser(targetId, TODAY))
-                .isInstanceOf(MatchException.class)
-                .hasMessageContaining("상대");
+        MatchResultResponse result = matchService.createMatchForUser(targetId, TODAY);
+
+        assertThat(result.status()).isEqualTo(MatchStatus.PENDING);
+        assertThat(result.match()).isNull();
+        verify(matchRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("getMatch: 오늘 매칭이 없으면 에러가 아니라 PENDING을 반환한다(폴링용)")
+    void getMatchReturnsPendingWhenNone() {
+        UUID userId = UUID.randomUUID();
+        when(matchRepository.findByDateAndParticipant(TODAY, userId)).thenReturn(Optional.empty());
+
+        MatchResultResponse result = matchService.getMatch(userId, TODAY);
+
+        assertThat(result.status()).isEqualTo(MatchStatus.PENDING);
+        assertThat(result.match()).isNull();
+    }
+
+    @Test
+    @DisplayName("getMatch: 오늘 매칭이 있으면 MATCHED와 상대 정보를 반환한다")
+    void getMatchReturnsMatchedWhenExists() {
+        UUID userId = UUID.randomUUID();
+        AppUser viewer = user(userId, "인문", "나");
+        AppUser partner = user(UUID.randomUUID(), "자연", "상대");
+        Match existing = Match.create(viewer, partner, TODAY, 88, "{}");
+
+        when(matchRepository.findByDateAndParticipant(TODAY, userId)).thenReturn(Optional.of(existing));
+
+        MatchResultResponse result = matchService.getMatch(userId, TODAY);
+
+        assertThat(result.status()).isEqualTo(MatchStatus.MATCHED);
+        assertThat(result.match().similarityScore()).isEqualTo(88);
+        assertThat(result.match().partnerNickname()).isEqualTo("상대");
     }
 
     @Test

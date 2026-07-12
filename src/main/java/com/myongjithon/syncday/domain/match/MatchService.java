@@ -6,6 +6,7 @@ import com.myongjithon.syncday.domain.analysis.AnalysisResult;
 import com.myongjithon.syncday.domain.analysis.AnalysisResultRepository;
 import com.myongjithon.syncday.domain.analysis.dto.FeaturesDto;
 import com.myongjithon.syncday.domain.match.dto.MatchResponse;
+import com.myongjithon.syncday.domain.match.dto.MatchResultResponse;
 import com.myongjithon.syncday.domain.match.similarity.AnalysisFeatures;
 import com.myongjithon.syncday.domain.match.similarity.SimilarityCalculator;
 import com.myongjithon.syncday.domain.match.similarity.SimilarityResult;
@@ -34,18 +35,22 @@ public class MatchService {
     private final ObjectMapper objectMapper;
 
     /**
-     * 대상 유저의 해당 날짜 매칭을 생성한다. 이미 매칭돼 있으면 기존 결과를 그대로 반환한다(멱등).
+     * 대상 유저의 해당 날짜 매칭을 시도한다. 이미 매칭돼 있으면 기존 결과를 그대로 반환한다(멱등).
      * 후보군은 같은 날짜 · 반대 캠퍼스 · 아직 매칭되지 않은 유저이며, 그 중 유사도가 가장 높은 상대를 고른다.
+     *
+     * <p>하루 매칭 특성상, 먼저 분석을 끝낸 유저는 반대 캠퍼스 상대가 아직 아무도 없을 수 있다.
+     * 이는 에러가 아니라 대기 상태이므로 {@link MatchResultResponse#pending()} 를 반환한다.
+     * FE는 이 응답을 받는 동안 "매칭중..." 화면을 유지하며 폴링한다.
      */
     @Transactional
-    public MatchResponse createMatchForUser(UUID userId, LocalDate date) {
+    public MatchResultResponse createMatchForUser(UUID userId, LocalDate date) {
         AnalysisResult target = analysisResultRepository.findByUser_UserIdAndAnalysisDate(userId, date)
                 .orElseThrow(() -> new MatchException(MatchErrorCode.ANALYSIS_NOT_FOUND));
 
         // 멱등성: 오늘 이미 매칭됐다면 재계산 없이 기존 매칭 반환.
         Optional<Match> existing = matchRepository.findByDateAndParticipant(date, userId);
         if (existing.isPresent()) {
-            return MatchResponse.of(existing.get(), userId);
+            return MatchResultResponse.matched(MatchResponse.of(existing.get(), userId));
         }
 
         AppUser targetUser = target.getUser();
@@ -60,8 +65,9 @@ public class MatchService {
                 .filter(candidate -> !alreadyMatched.contains(candidate.getUser().getUserId()))
                 .toList();
 
+        // 상대가 아직 없음 → 에러가 아니라 대기(PENDING). 상대가 분석을 끝내는 순간 다음 폴링에서 성사된다.
         if (candidates.isEmpty()) {
-            throw new MatchException(MatchErrorCode.NO_MATCH_CANDIDATE);
+            return MatchResultResponse.pending();
         }
 
         AnalysisFeatures targetFeatures = toFeatures(target);
@@ -85,15 +91,18 @@ public class MatchService {
         );
         Match saved = matchRepository.save(match);
 
-        return MatchResponse.of(saved, userId);
+        return MatchResultResponse.matched(MatchResponse.of(saved, userId));
     }
 
-    /** 유저의 해당 날짜 매칭 조회. 없으면 아직 매칭 상대가 없는 것으로 본다. */
+    /**
+     * 유저의 해당 날짜 매칭 조회. 매칭이 없으면 에러가 아니라 대기(PENDING)로 본다.
+     * FE가 결과 탭을 열어두고 이 엔드포인트를 폴링하다가 MATCHED로 바뀌면 결과 카드를 띄운다.
+     */
     @Transactional(readOnly = true)
-    public MatchResponse getMatch(UUID userId, LocalDate date) {
-        Match match = matchRepository.findByDateAndParticipant(date, userId)
-                .orElseThrow(() -> new MatchException(MatchErrorCode.NO_MATCH_CANDIDATE));
-        return MatchResponse.of(match, userId);
+    public MatchResultResponse getMatch(UUID userId, LocalDate date) {
+        return matchRepository.findByDateAndParticipant(date, userId)
+                .map(match -> MatchResultResponse.matched(MatchResponse.of(match, userId)))
+                .orElseGet(MatchResultResponse::pending);
     }
 
     /** F2가 통짜 JSON으로 저장한 features를 유사도 계산 입력으로 되돌린다. */
