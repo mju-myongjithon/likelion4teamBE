@@ -19,7 +19,16 @@ from app.prompts import (
     FEATURE_EXTRACTION_SYSTEM_PROMPT,
     ICEBREAKER_SYSTEM_PROMPT,
 )
-from app.schemas import ActivityCategoryTag, ColorTag, DayFeatures, MoodTag, SceneCategoryTag, TimeOfDayTag
+from app.schemas import (
+    ActivityCategoryTag,
+    ActivityEntry,
+    ColorTag,
+    DayFeatures,
+    MoodTag,
+    SceneCategoryTag,
+    SceneEntry,
+    TimeOfDayTag,
+)
 
 
 class _SceneEntrySchema(BaseModel):
@@ -106,6 +115,23 @@ def _load_image_part(url: str) -> types.Part:
     return types.Part.from_bytes(data=data, mime_type=mime_type)
 
 
+def _fallback_day_features() -> DayFeatures:
+    """Gemini 호출/파싱이 끝까지 실패했을 때 쓰는 안전한 기본값.
+
+    데모 중 화면이 에러로 멈추는 것보다, 다소 밋밋하더라도 그럴듯한 기본
+    결과를 보여주는 게 낫다는 판단으로 F2 파이프라인의 최종 안전망으로 둔다.
+    실제로 이 경로를 탔는지는 ERROR 로그로 추적 가능하다.
+    """
+    return DayFeatures(
+        scene=[SceneEntry(category="기타", detail="오늘 하루")],
+        timeOfDay=["오후"],
+        mood=["무난함"],
+        color=["다채로움"],
+        activity=[ActivityEntry(category="기타", detail="다양한 활동")],
+        summary="오늘 하루의 특징을 정확히 분석하지 못했어요. 잠시 후 다시 시도해주세요.",
+    )
+
+
 def extract_day_features(image_urls: List[str]) -> DayFeatures:
     parts = [
         types.Part.from_text(
@@ -126,19 +152,24 @@ def extract_day_features(image_urls: List[str]) -> DayFeatures:
         ),
     )
 
-    # 1차 호출: 네트워크/레이트리밋(429, 5xx)에 대해서만 백오프 재시도 (최대 4회)
-    response = _generate_with_retry(**generation_kwargs)
     try:
-        data = json.loads(response.text)
-        return DayFeatures(**data)
-    except (json.JSONDecodeError, TypeError, ValueError):
-        # 모델이 스키마에서 벗어난 JSON을 내놓는 드문 경우, 백오프 없이 딱 1번만 더 호출한다.
-        # (_generate_with_retry를 또 부르면 재시도가 중첩되어 최악의 경우 호출이 크게 늘어남)
-        logger.warning("특징 추출 응답 파싱 실패, 추가 호출 1회 시도")
-        client = get_client()
-        response = client.models.generate_content(**generation_kwargs)
-        data = json.loads(response.text)
-        return DayFeatures(**data)
+        # 1차 호출: 네트워크/레이트리밋(429, 5xx)에 대해서만 백오프 재시도 (최대 4회)
+        response = _generate_with_retry(**generation_kwargs)
+        try:
+            data = json.loads(response.text)
+            return DayFeatures(**data)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            # 모델이 스키마에서 벗어난 JSON을 내놓는 드문 경우, 백오프 없이 딱 1번만 더 호출한다.
+            # (_generate_with_retry를 또 부르면 재시도가 중첩되어 최악의 경우 호출이 크게 늘어남)
+            logger.warning("특징 추출 응답 파싱 실패, 추가 호출 1회 시도")
+            client = get_client()
+            response = client.models.generate_content(**generation_kwargs)
+            data = json.loads(response.text)
+            return DayFeatures(**data)
+    except Exception:
+        # 타임아웃, 네트워크 오류, 재시도 소진, 반복된 파싱 실패 등 모든 경우의 최종 안전망.
+        logger.error("특징 추출 최종 실패 - 기본값으로 대체", exc_info=True)
+        return _fallback_day_features()
 
 
 def generate_description(user_a: DayFeatures, user_b: DayFeatures, score: float) -> str:
@@ -149,15 +180,19 @@ def generate_description(user_a: DayFeatures, user_b: DayFeatures, score: float)
         "위 두 학생의 오늘 하루가 왜 닮았는지, 공통점을 중심으로 설명해주세요."
     )
 
-    response = _generate_with_retry(
-        model=settings.text_model,
-        contents=user_prompt,
-        config=types.GenerateContentConfig(
-            system_instruction=DESCRIPTION_SYSTEM_PROMPT,
-            temperature=0.7,
-        ),
-    )
-    return _strip_markdown(response.text)
+    try:
+        response = _generate_with_retry(
+            model=settings.text_model,
+            contents=user_prompt,
+            config=types.GenerateContentConfig(
+                system_instruction=DESCRIPTION_SYSTEM_PROMPT,
+                temperature=0.7,
+            ),
+        )
+        return _strip_markdown(response.text)
+    except Exception:
+        logger.error("설명 생성 실패 - 기본 문구로 대체", exc_info=True)
+        return "두 분의 오늘 하루에는 서로 닮은 순간이 있었어요."
 
 
 def generate_icebreaker(user_a: DayFeatures, user_b: DayFeatures) -> str:
