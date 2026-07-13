@@ -31,7 +31,7 @@
 
 | 영역 | 기술 |
 |---|---|
-| Frontend | React Native |
+| Frontend | React |
 | Backend | Spring Boot (Spring Data JPA) |
 | Database | PostgreSQL |
 | Infra | AWS Lightsail, Caddy (HTTPS), syncday.site |
