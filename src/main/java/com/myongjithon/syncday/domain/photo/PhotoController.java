@@ -49,4 +49,11 @@ public class PhotoController {
         List<PhotoUploadResponse> response = photoService.getTodayPhotos(userId);
         return ResponseEntity.ok(response);
     }
+
+    @Operation(summary = "사진 삭제", description = "오늘 업로드한 사진들을 삭제합니다")
+    @DeleteMapping("/reset")
+    public ResponseEntity<Void> resetTodayPhotos(@RequestParam UUID userId) {
+        photoService.resetTodayPhotos(userId);
+        return ResponseEntity.noContent().build();
+    }
 }
