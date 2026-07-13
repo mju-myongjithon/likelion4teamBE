@@ -62,7 +62,7 @@ public class PhotoService {
             throw new PhotoUploadException(PhotoErrorCode.PHOTO_COUNT_EXCEEDED);
         }
 
-        String s3Key = uploadToS3(file, isPrivacyMode);
+        String s3Key = uploadToS3(userId, file, isPrivacyMode);
         String presignedUrl = generatePresignedUrl(s3Key);
 
         Photo photo = Photo.builder()
@@ -114,7 +114,7 @@ public class PhotoService {
         }
     }
 
-    private String uploadToS3(MultipartFile file, boolean isPrivacyMode) {
+    private String uploadToS3(UUID userId, MultipartFile file, boolean isPrivacyMode) {
         byte[] imageBytes;
         String contentType = file.getContentType();
 
@@ -136,14 +136,13 @@ public class PhotoService {
         }
 
         String extension = isPrivacyMode ? "jpg" : extractExtension(file.getOriginalFilename());
-        String fileName = UUID.randomUUID() + "." + extension;
+        String fileName = userId + "/" + UUID.randomUUID() + "." + extension;
 
         PutObjectRequest request = PutObjectRequest.builder()
                 .bucket(bucketName)
                 .key(fileName)
                 .contentType(contentType)
                 .build();
-
         try {
             s3Client.putObject(request, RequestBody.fromBytes(imageBytes));
         } catch (Exception firstAttemptException) {
