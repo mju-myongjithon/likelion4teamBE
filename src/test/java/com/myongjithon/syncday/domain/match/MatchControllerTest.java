@@ -47,7 +47,7 @@ class MatchControllerTest {
     @DisplayName("매칭 실행: 동시 저장 충돌이면 조회로 성사된 매칭을 돌려준다(멱등 복구)")
     void createMatchRecoversFromConcurrentConflict() {
         UUID userId = UUID.randomUUID();
-        MatchResultResponse matched = MatchResultResponse.matched(
+        MatchResultResponse matched = new MatchResultResponse(MatchStatus.MATCHED,
                 new MatchResponse(UUID.randomUUID(), LocalDate.now(), 77,
                         UUID.randomUUID(), "상대", "자연", false, "{}"));
 
@@ -85,5 +85,35 @@ class MatchControllerTest {
 
         assertThat(response.getBody()).isSameAs(declined);
         assertThat(response.getBody().status()).isEqualTo(MatchStatus.DECLINED);
+    }
+
+    @Test
+    @DisplayName("채팅 수락(게이트2): applyChatDecision(ACCEPTED) 결과를 그대로 돌려준다")
+    void acceptChatDelegates() {
+        UUID userId = UUID.randomUUID();
+        MatchResultResponse connected = new MatchResultResponse(MatchStatus.CONNECTED,
+                new MatchResponse(UUID.randomUUID(), LocalDate.now(), 87,
+                        UUID.randomUUID(), "상대", "자연", true, "{}"));
+        when(matchService.applyChatDecision(eq(userId), any(LocalDate.class), eq(Gate2Decision.ACCEPTED)))
+                .thenReturn(connected);
+
+        ResponseEntity<MatchResultResponse> response = matchController.acceptChat(userId);
+
+        assertThat(response.getBody()).isSameAs(connected);
+        assertThat(response.getBody().status()).isEqualTo(MatchStatus.CONNECTED);
+    }
+
+    @Test
+    @DisplayName("채팅 거부(게이트2): applyChatDecision(REJECTED) 결과를 그대로 돌려준다")
+    void rejectChatDelegates() {
+        UUID userId = UUID.randomUUID();
+        MatchResultResponse ended = new MatchResultResponse(MatchStatus.ENDED, null);
+        when(matchService.applyChatDecision(eq(userId), any(LocalDate.class), eq(Gate2Decision.REJECTED)))
+                .thenReturn(ended);
+
+        ResponseEntity<MatchResultResponse> response = matchController.rejectChat(userId);
+
+        assertThat(response.getBody()).isSameAs(ended);
+        assertThat(response.getBody().status()).isEqualTo(MatchStatus.ENDED);
     }
 }

@@ -17,6 +17,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -80,9 +81,14 @@ class MatchServiceTest {
 
         assertThat(result.status()).isEqualTo(MatchStatus.MATCHED);
         MatchResponse response = result.match();
-        assertThat(response.similarityScore()).isEqualTo(100);
         assertThat(response.partnerId()).isEqualTo(highId);
         assertThat(response.partnerNickname()).isEqualTo("높은유사도");
+        // 매칭 성사(2b3) 시점엔 유사도가 아직 가려진다(게이트2 CONNECTED 전)
+        assertThat(response.similarityScore()).isNull();
+        // 계산된 점수는 엔티티에 저장돼 있어야 한다(동일 features → 100점)
+        ArgumentCaptor<Match> saved = ArgumentCaptor.forClass(Match.class);
+        verify(matchRepository).saveAndFlush(saved.capture());
+        assertThat(saved.getValue().getSimilarityScore()).isEqualTo(100);
         verify(target).acceptMatching(); // POST = "매칭 수락"(opt-in) 이므로 대상 유저는 수락 처리된다
     }
 
@@ -106,10 +112,15 @@ class MatchServiceTest {
         MatchResultResponse result = matchService.createMatchForUser(targetId, TODAY);
 
         assertThat(result.status()).isEqualTo(MatchStatus.MATCHED);
-        MatchResponse response = result.match();
+        // 매칭 성사(2b3) 시점엔 유사도·근거가 아직 응답에서 가려진다(게이트2 CONNECTED 전)
+        assertThat(result.match().similarityScore()).isNull();
+        assertThat(result.match().scoreBreakdown()).isNull();
+        // 계산·직렬화 결과는 엔티티에 저장돼 있어야 한다
+        ArgumentCaptor<Match> saved = ArgumentCaptor.forClass(Match.class);
+        verify(matchRepository).saveAndFlush(saved.capture());
         // scene(0.30) + activity(0.20) 만 일치 → 50점
-        assertThat(response.similarityScore()).isEqualTo(50);
-        assertThat(response.scoreBreakdown())
+        assertThat(saved.getValue().getSimilarityScore()).isEqualTo(50);
+        assertThat(saved.getValue().getScoreBreakdown())
                 .contains("\"scene\"", "\"timeOfDay\"", "\"activity\"", "\"mood\"", "\"color\"")
                 .contains("commonTags")
                 .doesNotContain("valueA");
@@ -135,8 +146,8 @@ class MatchServiceTest {
 
         assertThat(result.status()).isEqualTo(MatchStatus.MATCHED);
         MatchResponse response = result.match();
-        assertThat(response.similarityScore()).isEqualTo(72);
-        assertThat(response.partnerNickname()).isEqualTo("기존상대");
+        assertThat(response.partnerNickname()).isEqualTo("기존상대"); // 기존 매칭을 그대로 반환
+        assertThat(response.similarityScore()).isNull();            // 아직 CONNECTED 전이라 점수는 가림
         verify(matchRepository, never()).saveAndFlush(any());
         verify(analysisResultRepository, never()).findByAnalysisDateAndUser_CampusNotAndMatchDecision(any(), any(), any());
     }
@@ -279,8 +290,8 @@ class MatchServiceTest {
         MatchResultResponse result = matchService.getMatch(userId, TODAY);
 
         assertThat(result.status()).isEqualTo(MatchStatus.MATCHED);
-        assertThat(result.match().similarityScore()).isEqualTo(88);
-        assertThat(result.match().partnerNickname()).isEqualTo("상대");
+        assertThat(result.match().partnerNickname()).isEqualTo("상대"); // 상대 신원은 MATCHED부터 공개
+        assertThat(result.match().similarityScore()).isNull();         // 유사도는 CONNECTED부터 공개
     }
 
     @Test
@@ -301,6 +312,86 @@ class MatchServiceTest {
         assertThatThrownBy(() -> matchService.createMatchForUser(targetId, TODAY))
                 .isInstanceOf(MatchException.class)
                 .hasMessageContaining("분석 결과");
+    }
+
+    @Test
+    @DisplayName("게이트2: 내가 수락했지만 상대가 아직이면 AWAITING_PARTNER, 유사도는 가려진다")
+    void chatAcceptWaitsForPartner() {
+        UUID userId = UUID.randomUUID();
+        AppUser viewer = user(userId, "인문", "나");
+        AppUser partner = user(UUID.randomUUID(), "자연", "상대");
+        Match match = Match.create(viewer, partner, TODAY, 88, "{\"totalScore\":88}");
+        when(matchRepository.findByDateAndParticipant(TODAY, userId)).thenReturn(Optional.of(match));
+
+        MatchResultResponse result = matchService.applyChatDecision(userId, TODAY, Gate2Decision.ACCEPTED);
+
+        assertThat(result.status()).isEqualTo(MatchStatus.AWAITING_PARTNER);
+        assertThat(result.match().similarityScore()).isNull();
+        assertThat(result.match().revealedToMe()).isFalse();
+        assertThat(match.isConnected()).isFalse();
+    }
+
+    @Test
+    @DisplayName("게이트2: 양쪽 다 수락하면 CONNECTED, connectedAt 기록되고 유사도·근거가 공개된다")
+    void chatBothAcceptConnects() {
+        UUID userId = UUID.randomUUID();
+        AppUser viewer = user(userId, "인문", "나");
+        AppUser partner = user(UUID.randomUUID(), "자연", "상대");
+        Match match = Match.create(viewer, partner, TODAY, 88, "{\"totalScore\":88}");
+        match.applyChatDecision(partner.getUserId(), Gate2Decision.ACCEPTED); // 상대는 이미 수락한 상태
+        when(matchRepository.findByDateAndParticipant(TODAY, userId)).thenReturn(Optional.of(match));
+
+        MatchResultResponse result = matchService.applyChatDecision(userId, TODAY, Gate2Decision.ACCEPTED);
+
+        assertThat(result.status()).isEqualTo(MatchStatus.CONNECTED);
+        assertThat(result.match().similarityScore()).isEqualTo(88);
+        assertThat(result.match().revealedToMe()).isTrue();
+        assertThat(result.match().scoreBreakdown()).contains("totalScore");
+        assertThat(match.isConnected()).isTrue();
+        assertThat(match.getConnectedAt()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("게이트2: 거부하면 ENDED가 되고 점수는 공개되지 않는다")
+    void chatRejectEnds() {
+        UUID userId = UUID.randomUUID();
+        AppUser viewer = user(userId, "인문", "나");
+        AppUser partner = user(UUID.randomUUID(), "자연", "상대");
+        Match match = Match.create(viewer, partner, TODAY, 88, "{}");
+        when(matchRepository.findByDateAndParticipant(TODAY, userId)).thenReturn(Optional.of(match));
+
+        MatchResultResponse result = matchService.applyChatDecision(userId, TODAY, Gate2Decision.REJECTED);
+
+        assertThat(result.status()).isEqualTo(MatchStatus.ENDED);
+        assertThat(result.match().similarityScore()).isNull();
+    }
+
+    @Test
+    @DisplayName("게이트2: 이미 연결(CONNECTED)된 뒤 거부는 무시된다(터미널)")
+    void chatDecisionAfterConnectedIsIgnored() {
+        UUID userId = UUID.randomUUID();
+        AppUser viewer = user(userId, "인문", "나");
+        AppUser partner = user(UUID.randomUUID(), "자연", "상대");
+        Match match = Match.create(viewer, partner, TODAY, 88, "{}");
+        match.applyChatDecision(partner.getUserId(), Gate2Decision.ACCEPTED);
+        match.applyChatDecision(userId, Gate2Decision.ACCEPTED); // 이미 연결됨
+        when(matchRepository.findByDateAndParticipant(TODAY, userId)).thenReturn(Optional.of(match));
+
+        MatchResultResponse result = matchService.applyChatDecision(userId, TODAY, Gate2Decision.REJECTED);
+
+        assertThat(result.status()).isEqualTo(MatchStatus.CONNECTED); // 되돌아가지 않음
+        assertThat(match.isConnected()).isTrue();
+    }
+
+    @Test
+    @DisplayName("게이트2: 성사된 매칭이 없으면 MATCH_NOT_FOUND")
+    void chatWithoutMatchThrows() {
+        UUID userId = UUID.randomUUID();
+        when(matchRepository.findByDateAndParticipant(TODAY, userId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> matchService.applyChatDecision(userId, TODAY, Gate2Decision.ACCEPTED))
+                .isInstanceOf(MatchException.class)
+                .hasMessageContaining("매칭");
     }
 
     // ---- helpers ----

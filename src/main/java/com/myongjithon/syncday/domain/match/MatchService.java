@@ -6,7 +6,6 @@ import com.myongjithon.syncday.domain.analysis.AnalysisResult;
 import com.myongjithon.syncday.domain.analysis.AnalysisResultRepository;
 import com.myongjithon.syncday.domain.analysis.MatchDecision;
 import com.myongjithon.syncday.domain.analysis.dto.FeaturesDto;
-import com.myongjithon.syncday.domain.match.dto.MatchResponse;
 import com.myongjithon.syncday.domain.match.dto.MatchResultResponse;
 import com.myongjithon.syncday.domain.match.similarity.AnalysisFeatures;
 import com.myongjithon.syncday.domain.match.similarity.SimilarityCalculator;
@@ -54,7 +53,7 @@ public class MatchService {
         // 멱등성: 오늘 이미 매칭됐다면 재계산 없이 기존 매칭 반환.
         Optional<Match> existing = matchRepository.findByDateAndParticipant(date, userId);
         if (existing.isPresent()) {
-            return MatchResultResponse.matched(MatchResponse.of(existing.get(), userId));
+            return MatchResultResponse.fromMatch(existing.get(), userId);
         }
 
         AppUser targetUser = target.getUser();
@@ -100,7 +99,7 @@ public class MatchService {
         // 컨트롤러가 "이미 성사된 매칭 조회"로 복구(멱등)할 수 있게 한다.
         Match saved = matchRepository.saveAndFlush(match);
 
-        return MatchResultResponse.matched(MatchResponse.of(saved, userId));
+        return MatchResultResponse.fromMatch(saved, userId);
     }
 
     /**
@@ -114,11 +113,24 @@ public class MatchService {
 
         Optional<Match> existing = matchRepository.findByDateAndParticipant(date, userId);
         if (existing.isPresent()) {
-            return MatchResultResponse.matched(MatchResponse.of(existing.get(), userId));
+            return MatchResultResponse.fromMatch(existing.get(), userId);
         }
 
         target.declineMatching();
         return MatchResultResponse.declined();
+    }
+
+    /**
+     * 게이트2: 뷰어가 채팅 참여를 수락/거부한다. 매칭이 성사된 뒤에만 유효하다.
+     * 양쪽이 모두 수락하면 매칭이 연결(CONNECTED)되고 connectedAt 이 기록되어 F5가 채팅방을 연다.
+     * 관리 엔티티라 커밋 시 변경이 자동 반영된다(멱등: 이미 연결/종료면 변화 없음).
+     */
+    @Transactional
+    public MatchResultResponse applyChatDecision(UUID userId, LocalDate date, Gate2Decision decision) {
+        Match match = matchRepository.findByDateAndParticipant(date, userId)
+                .orElseThrow(() -> new MatchException(MatchErrorCode.MATCH_NOT_FOUND));
+        match.applyChatDecision(userId, decision);
+        return MatchResultResponse.fromMatch(match, userId);
     }
 
     /**
@@ -130,7 +142,7 @@ public class MatchService {
     public MatchResultResponse getMatch(UUID userId, LocalDate date) {
         Optional<Match> match = matchRepository.findByDateAndParticipant(date, userId);
         if (match.isPresent()) {
-            return MatchResultResponse.matched(MatchResponse.of(match.get(), userId));
+            return MatchResultResponse.fromMatch(match.get(), userId);
         }
 
         // 매칭 전이면 유저의 수락/거부 상태로 화면을 구분해준다.

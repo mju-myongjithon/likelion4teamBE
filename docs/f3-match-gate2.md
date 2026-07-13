@@ -33,7 +33,7 @@
 
 | 디자인 | 필요한 것 | F3 백엔드(현재) | 판정 | 개선 방향 (설계) |
 |---|---|---|---|---|
-| **2b3 매칭 발견**<br>(상대 공개 + 수락/거절) | ①상대 사진 ②게이트2 수락/거절 엔드포인트 ③reveal 플래그 | ❌ 상대 사진 필드 없음<br>❌ 게이트2 엔드포인트 없음<br>❌ reveal→true 코드 없음 | 🔴 연동 불가 | `MATCHED` = "상대 공개 + 게이트2 대기" 화면으로 사용. **`Match`에 `chatDecisionA/B`(Gate2Decision) 추가.** MATCHED부터 응답에 **상대 신원(nickname·campus·블러 사진 URL·공통태그) 포함**(상대 사진 = 상대의 오늘 F1 사진 재사용). 단 유사도·점수는 아직 숨김. 수락/거절 → **`POST /api/matches/chat?userId=&decision=ACCEPT\|REJECT`** |
+| **2b3 매칭 발견**<br>(상대 공개 + 수락/거절) | ①상대 사진 ②게이트2 수락/거절 엔드포인트 ③reveal 플래그 | ❌ 상대 사진 필드 없음<br>❌ 게이트2 엔드포인트 없음<br>❌ reveal→true 코드 없음 | 🔴 연동 불가 | `MATCHED` = "상대 공개 + 게이트2 대기" 화면으로 사용. **`Match`에 `chatDecisionA/B`(Gate2Decision) 추가.** MATCHED부터 응답에 **상대 신원(nickname·campus·블러 사진 URL·공통태그) 포함**(상대 사진 = 상대의 오늘 F1 사진 재사용). 단 유사도·점수는 아직 숨김. 수락/거절 → **`POST /api/matches/chat/accept`·`/chat/reject?userId=`** |
 | **2b4 상대 응답 대기**<br>(내 수락 후 상대 대기) | 양방향 게이트2 상태(내 결정·상대 결정 구분) | ❌ 그런 상태·엔드포인트 없음 | 🔴 연동 불가 | 뷰어 기준 **`AWAITING_PARTNER` 상태 신설**(나 ACCEPTED · 상대 PENDING). FE는 **`GET /api/matches/today` 폴링**으로 `CONNECTED` 전환 감지 — 게이트1의 폴링 패턴 그대로 재사용 |
 | **2c 매칭 완료**<br>(유사도 87% + AI 코멘트) | 유사도, scoreBreakdown, AI 코멘트 | ✅ `similarityScore`<br>✅ `scoreBreakdown`<br>❌ AI 코멘트 필드 없음 | 🟡 부분 연동 | 양쪽 ACCEPTED → **`CONNECTED` 상태 + `connectedAt` 1회 기록**(= F5 채팅 오픈 트리거). **CONNECTED부터 `similarityScore`·`scoreBreakdown` 공개**(2b3의 "유사도는 대화 시작하면" 규칙 반영). **AI 코멘트는 여전히 백엔드에 없음** → F4(설명 생성) 재활용해 CONNECTED 시점 생성 or 신규 필드(⚠️열린 항목). "채팅 시작하기"는 **F5 소관**(F3는 방 생성 안 함) |
 | **2d 매칭 종료**<br>("대화로 이어지지 않음") | 게이트2 거절로 종료된 상태 | ⚠️ `DECLINED`는 게이트1 거부(매칭 전)라 의미 다름 | 🟡 의미 불일치 | 게이트2 REJECTED(둘 중 누구든) → **`ENDED` 상태 신설**(게이트1 `DECLINED`와 분리). **소진 정책**: 매칭 행 유지 → 기존 1:1 배타 로직이 그날 재매칭을 자동 차단, 후보 풀 코드 변경 불필요 |
@@ -88,9 +88,9 @@ NOT_REQUESTED ──(수락)──▶ PENDING ──▶ MATCHED(2b3) ──▶ A
   POST /api/matches/decline?userId=  게이트1 거부
   GET  /api/matches/today?userId=    상태 조회(이제 확장된 status 반환)
 
-추가:
-  POST /api/matches/chat?userId=&decision=ACCEPT|REJECT
-       └ 뷰어의 chatDecision 설정 → 양쪽 ACCEPTED면 connectedAt 기록, status 재계산
+추가 (게이트1의 수락/거부 2-엔드포인트 스타일과 통일):
+  POST /api/matches/chat/accept?userId=   게이트2 수락 → 양쪽 ACCEPTED면 connectedAt 기록
+  POST /api/matches/chat/reject?userId=   게이트2 거부 → status ENDED
 ```
 
 - 2b4(상대 대기)에서 FE는 `GET /today`를 폴링해 `CONNECTED` 전환을 감지한다(게이트1 폴링 패턴 그대로).
