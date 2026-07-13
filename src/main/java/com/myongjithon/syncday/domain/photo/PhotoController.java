@@ -50,8 +50,12 @@ public class PhotoController {
         return ResponseEntity.ok(response);
     }
 
-    @Operation(summary = "사진 삭제", description = "오늘 업로드한 사진들을 삭제합니다")
-    @DeleteMapping("/reset")
+    @Operation(
+            summary = "[테스트용] 오늘 업로드 사진 전체 초기화",
+            description = "지정한 유저가 오늘 업로드한 사진을 DB·S3에서 전부 삭제해 " +
+                    "10장 업로드 캡을 리셋합니다. 공용 테스트 유저 반복 테스트 전용이며, " +
+                    "실제 서비스 기능(개별 사진 삭제)이 아닙니다."
+    )    @DeleteMapping("/reset")
     public ResponseEntity<Void> resetTodayPhotos(@RequestParam UUID userId) {
         photoService.resetTodayPhotos(userId);
         return ResponseEntity.noContent().build();
