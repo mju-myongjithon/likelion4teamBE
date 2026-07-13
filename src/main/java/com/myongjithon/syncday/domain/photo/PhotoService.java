@@ -219,4 +219,11 @@ public class PhotoService {
         return output.toByteArray();
     }
 
+    @Transactional
+    public void resetTodayPhotos(UUID userId) {
+        TodayRange today = getTodayRange();
+        List<Photo> todayPhotos = photoRepository.findByUser_UserIdAndUploadedAtBetween(userId, today.start(), today.end());
+        photoRepository.deleteAll(todayPhotos);
+    }
+
 }
