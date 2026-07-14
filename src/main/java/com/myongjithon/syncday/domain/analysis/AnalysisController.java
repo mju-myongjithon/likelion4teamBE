@@ -6,6 +6,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -27,7 +28,14 @@ public class AnalysisController {
     @Operation(summary = "오늘의 나를 분석하기", description = "오늘 업로드한 사진 3장 이상을 ai-service로 보내 특징을 추출하고 저장합니다. 이미 분석했으면 기존 결과를 그대로 반환합니다.")
     @PostMapping
     public ResponseEntity<AnalyzeResponse> analyzeToday(@RequestBody @Valid AnalyzeRequest request) {
-        AnalyzeResponse response = analysisService.analyzeToday(request.getUserId());
+        AnalyzeResponse response;
+        try {
+            response = analysisService.analyzeToday(request.getUserId());
+        } catch (DataIntegrityViolationException e) {
+            // 같은 유저가 짧은 간격으로 두 번 요청해 유니크 제약(uk_analysis_user_date)이 충돌한 경우.
+            // 다른 요청이 이미 분석을 커밋했다는 뜻이므로, 조회로 그 결과를 그대로 돌려준다(멱등).
+            response = analysisService.getTodayAnalysis(request.getUserId());
+        }
         return ResponseEntity.ok(response);
     }
 

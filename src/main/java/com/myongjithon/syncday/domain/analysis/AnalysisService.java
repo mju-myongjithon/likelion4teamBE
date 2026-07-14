@@ -75,7 +75,10 @@ public class AnalysisService {
                 .analysisDate(today)
                 .featuresJson(toJson(aiResponse))
                 .build();
-        AnalysisResult saved = analysisResultRepository.save(analysisResult);
+        // saveAndFlush: 짧은 간격의 중복 요청이 동시에 여기까지 오면 유니크 제약(uk_analysis_user_date)에 걸린다.
+        // 이 위반을 커밋 지연이 아니라 이 지점에서 DataIntegrityViolationException으로 즉시 드러내
+        // 컨트롤러가 "이미 분석된 결과 조회"로 복구(멱등)할 수 있게 한다.
+        AnalysisResult saved = analysisResultRepository.saveAndFlush(analysisResult);
 
         List<UUID> photoIds = todayPhotos.stream().map(Photo::getPhotoId).toList();
         photoRepository.linkAnalysis(saved.getAnalysisId(), photoIds);

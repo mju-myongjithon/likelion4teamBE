@@ -14,9 +14,20 @@ import java.util.UUID;
  * AI 서비스(F2)가 반환한 하루치 features 결과 저장용 엔티티.
  * featuresJson은 ai-service의 DayFeatures를 그대로 직렬화한 JSON 문자열이다
  * (F3/F4/F6 호출 시 다시 역직렬화해서 그대로 넘기면 된다).
+ *
+ * (user_id, analysis_date) 유니크 제약: "분석하기"가 짧은 간격으로 중복 호출돼도
+ * (더블클릭·네트워크 재시도 등) 같은 유저·날짜에 행이 2개 생기지 않도록 막는다.
+ * 이 제약이 없으면 조회 쿼리(findByUser_UserIdAndAnalysisDate)가 2건을 만나
+ * NonUniqueResultException으로 이후 조회가 영구적으로 실패한다.
  */
 @Entity
-@Table(name = "analysis_result")
+@Table(
+        name = "analysis_result",
+        uniqueConstraints = @UniqueConstraint(
+                name = "uk_analysis_user_date",
+                columnNames = {"user_id", "analysis_date"}
+        )
+)
 @Getter
 @NoArgsConstructor
 public class AnalysisResult {
