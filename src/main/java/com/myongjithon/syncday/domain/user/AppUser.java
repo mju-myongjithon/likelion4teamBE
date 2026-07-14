@@ -18,8 +18,10 @@ public class AppUser {
     @GeneratedValue
     private UUID userId;
 
+
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
-    private String campus;
+    private Campus campus;
 
     @Column(nullable = false, length = 50)
     private String nickname;
@@ -31,7 +33,7 @@ public class AppUser {
     private LocalDate lastParticipationDate;
 
     @Builder
-    public AppUser(String campus, String nickname) {
+    public AppUser(Campus campus, String nickname) {
         this.campus = campus;
         this.nickname = nickname;
         this.currentStreak = 0;

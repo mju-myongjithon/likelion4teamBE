@@ -1,5 +1,6 @@
 package com.myongjithon.syncday.domain.analysis;
 
+import com.myongjithon.syncday.domain.user.Campus;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.time.LocalDate;
@@ -16,5 +17,5 @@ public interface AnalysisResultRepository extends JpaRepository<AnalysisResult, 
      * matchDecision 으로 아직 정하지 않았거나(NONE/null) 거부(DECLINED)한 유저도 제외된다.
      */
     List<AnalysisResult> findByAnalysisDateAndUser_CampusNotAndMatchDecision(
-            LocalDate analysisDate, String campus, MatchDecision matchDecision);
+            LocalDate analysisDate, Campus campus, MatchDecision matchDecision);
 }
