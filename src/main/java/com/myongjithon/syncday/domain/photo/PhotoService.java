@@ -98,6 +98,13 @@ public class PhotoService {
                 .toList();
     }
 
+    /** 특정 유저의 오늘 사진 presigned URL 목록. 매칭 상대 사진 노출(F3)에서 재사용한다. */
+    public List<String> getTodayPhotoUrls(UUID userId) {
+        return getTodayPhotos(userId).stream()
+                .map(PhotoUploadResponse::getImageUrl)
+                .toList();
+    }
+
     private record TodayRange(LocalDateTime start, LocalDateTime end) {
     }
 

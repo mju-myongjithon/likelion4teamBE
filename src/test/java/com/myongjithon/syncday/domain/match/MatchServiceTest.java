@@ -12,6 +12,7 @@ import com.myongjithon.syncday.domain.analysis.dto.SceneEntryDto;
 import com.myongjithon.syncday.domain.match.dto.MatchResponse;
 import com.myongjithon.syncday.domain.match.dto.MatchResultResponse;
 import com.myongjithon.syncday.domain.match.similarity.SimilarityCalculator;
+import com.myongjithon.syncday.domain.photo.PhotoService;
 import com.myongjithon.syncday.domain.user.AppUser;
 import com.myongjithon.syncday.global.exception.MatchException;
 import org.junit.jupiter.api.BeforeEach;
@@ -46,6 +47,8 @@ class MatchServiceTest {
     private MatchRepository matchRepository;
     @Mock
     private AiServiceClient aiServiceClient;
+    @Mock
+    private PhotoService photoService;
 
     private final SimilarityCalculator similarityCalculator = new SimilarityCalculator();
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -57,7 +60,7 @@ class MatchServiceTest {
     @BeforeEach
     void setUp() {
         matchService = new MatchService(
-                analysisResultRepository, matchRepository, similarityCalculator, objectMapper, aiServiceClient);
+                analysisResultRepository, matchRepository, similarityCalculator, objectMapper, aiServiceClient, photoService);
     }
 
     @Test
@@ -396,6 +399,32 @@ class MatchServiceTest {
         assertThatThrownBy(() -> matchService.applyChatDecision(userId, TODAY, Gate2Decision.ACCEPTED))
                 .isInstanceOf(MatchException.class)
                 .hasMessageContaining("매칭");
+    }
+
+    @Test
+    @DisplayName("매칭 발견(MATCHED): 상대의 오늘 사진 URL과 대표 태그를 응답에 담는다")
+    void matchedIncludesPartnerPhotosAndTags() {
+        UUID userId = UUID.randomUUID();
+        UUID partnerId = UUID.randomUUID();
+        AppUser viewer = user(userId, "인문", "나");
+        AppUser partner = user(partnerId, "자연", "상대");
+        Match match = Match.create(viewer, partner, TODAY, 80, "{}");
+
+        when(matchRepository.findByDateAndParticipant(TODAY, userId)).thenReturn(Optional.of(match));
+        when(photoService.getTodayPhotoUrls(partnerId))
+                .thenReturn(List.of("https://s3/p1.jpg", "https://s3/p2.jpg"));
+        AnalysisResult partnerAnalysis = analysis(partnerId, "자연", "상대",
+                featuresJson("카페", "오후", "산책", "여유로움", "주황 계열"));
+        when(analysisResultRepository.findByUser_UserIdAndAnalysisDate(partnerId, TODAY))
+                .thenReturn(Optional.of(partnerAnalysis));
+
+        MatchResultResponse result = matchService.getMatch(userId, TODAY);
+
+        assertThat(result.status()).isEqualTo(MatchStatus.MATCHED);
+        assertThat(result.match().partnerPhotoUrls())
+                .containsExactly("https://s3/p1.jpg", "https://s3/p2.jpg");
+        assertThat(result.match().partnerTags()).contains("카페", "오후", "여유로움");
+        assertThat(result.match().similarityScore()).isNull(); // MATCHED라 점수는 여전히 가림
     }
 
     @Test

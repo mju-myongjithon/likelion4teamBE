@@ -4,6 +4,7 @@ import com.myongjithon.syncday.domain.match.Gate2Decision;
 import com.myongjithon.syncday.domain.match.Match;
 import com.myongjithon.syncday.domain.match.MatchStatus;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -27,15 +28,18 @@ public record MatchResultResponse(
 
     /**
      * 매칭 행이 존재할 때(MATCHED 이후) 뷰어 기준으로 게이트2 상태를 계산해 응답을 만든다.
-     * 유사도·근거는 CONNECTED 일 때만 채워진다.
+     * 상대 사진·태그는 MATCHED부터, 유사도·근거는 CONNECTED 일 때만 채워진다.
+     * (상대 사진·태그는 repository 접근이 필요해 서비스에서 조회한 값을 받아 넣는다.)
      */
-    public static MatchResultResponse fromMatch(Match match, UUID viewerId) {
+    public static MatchResultResponse fromMatch(Match match, UUID viewerId,
+                                                List<String> partnerPhotoUrls, List<String> partnerTags) {
         MatchStatus status = gate2Status(
                 match.chatDecisionOf(viewerId),
                 match.partnerChatDecisionOf(viewerId)
         );
         boolean scoresRevealed = status == MatchStatus.CONNECTED;
-        return new MatchResultResponse(status, MatchResponse.of(match, viewerId, scoresRevealed));
+        return new MatchResultResponse(status,
+                MatchResponse.of(match, viewerId, scoresRevealed, partnerPhotoUrls, partnerTags));
     }
 
     /** (내 결정, 상대 결정) → 화면 상태. 거부가 우선(종료), 다음 양쪽 수락(연결), 내 수락(상대 대기), 나머지 발견. */
