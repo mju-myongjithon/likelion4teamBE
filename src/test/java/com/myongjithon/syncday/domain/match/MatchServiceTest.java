@@ -14,6 +14,7 @@ import com.myongjithon.syncday.domain.match.dto.MatchResultResponse;
 import com.myongjithon.syncday.domain.match.similarity.SimilarityCalculator;
 import com.myongjithon.syncday.domain.photo.PhotoService;
 import com.myongjithon.syncday.domain.user.AppUser;
+import com.myongjithon.syncday.domain.user.Campus;
 import com.myongjithon.syncday.global.exception.MatchException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -68,19 +69,19 @@ class MatchServiceTest {
     void picksHighestSimilarityCandidate() {
         UUID targetId = UUID.randomUUID();
         String targetFeatures = featuresJson("카페", "오후", "공부", "차분함", "파란 계열");
-        AnalysisResult target = analysis(targetId, "인문", "타깃", targetFeatures);
+        AnalysisResult target = analysis(targetId, Campus.HUMANITIES, "타깃", targetFeatures);
 
-        AnalysisResult low = analysis(UUID.randomUUID(), "자연", "낮은유사도",
+        AnalysisResult low = analysis(UUID.randomUUID(), Campus.NATURAL, "낮은유사도",
                 featuresJson("체육시설", "밤", "운동", "활기참", "주황 계열"));
 
         UUID highId = UUID.randomUUID();
-        AnalysisResult high = analysis(highId, "자연", "높은유사도", targetFeatures); // 타깃과 동일 → 100점
+        AnalysisResult high = analysis(highId, Campus.NATURAL, "높은유사도", targetFeatures); // 타깃과 동일 → 100점
 
         when(analysisResultRepository.findByUser_UserIdAndAnalysisDate(targetId, TODAY))
                 .thenReturn(Optional.of(target));
         when(matchRepository.findByDateAndParticipant(TODAY, targetId)).thenReturn(Optional.empty());
         when(matchRepository.findByDate(TODAY)).thenReturn(List.of());
-        when(analysisResultRepository.findByAnalysisDateAndUser_CampusNotAndMatchDecision(TODAY, "인문", MatchDecision.ACCEPTED))
+        when(analysisResultRepository.findByAnalysisDateAndUser_CampusNotAndMatchDecision(TODAY, Campus.HUMANITIES, MatchDecision.ACCEPTED))
                 .thenReturn(List.of(low, high));
         when(matchRepository.saveAndFlush(any(Match.class))).thenAnswer(inv -> inv.getArgument(0));
 
@@ -103,16 +104,16 @@ class MatchServiceTest {
     @DisplayName("scoreBreakdown 에 다섯 차원의 commonTags 가 담긴다")
     void serializesBreakdownWithCommonTags() {
         UUID targetId = UUID.randomUUID();
-        AnalysisResult target = analysis(targetId, "인문", "타깃",
+        AnalysisResult target = analysis(targetId, Campus.HUMANITIES, "타깃",
                 featuresJson("카페", "오후", "공부", "차분함", "파란 계열"));
-        AnalysisResult partner = analysis(UUID.randomUUID(), "자연", "상대",
+        AnalysisResult partner = analysis(UUID.randomUUID(), Campus.NATURAL, "상대",
                 featuresJson("카페", "저녁", "공부", "활기참", "주황 계열"));
 
         when(analysisResultRepository.findByUser_UserIdAndAnalysisDate(targetId, TODAY))
                 .thenReturn(Optional.of(target));
         when(matchRepository.findByDateAndParticipant(TODAY, targetId)).thenReturn(Optional.empty());
         when(matchRepository.findByDate(TODAY)).thenReturn(List.of());
-        when(analysisResultRepository.findByAnalysisDateAndUser_CampusNotAndMatchDecision(TODAY, "인문", MatchDecision.ACCEPTED))
+        when(analysisResultRepository.findByAnalysisDateAndUser_CampusNotAndMatchDecision(TODAY, Campus.HUMANITIES, MatchDecision.ACCEPTED))
                 .thenReturn(List.of(partner));
         when(matchRepository.saveAndFlush(any(Match.class))).thenAnswer(inv -> inv.getArgument(0));
 
@@ -137,11 +138,11 @@ class MatchServiceTest {
     @DisplayName("이미 오늘 매칭된 유저는 재계산 없이 기존 매칭을 반환한다(멱등)")
     void idempotentWhenAlreadyMatched() {
         UUID targetId = UUID.randomUUID();
-        AnalysisResult target = analysis(targetId, "인문", "타깃",
+        AnalysisResult target = analysis(targetId, Campus.HUMANITIES, "타깃",
                 featuresJson("카페", "오후", "공부", "차분함", "파란 계열"));
 
         AppUser targetUser = target.getUser();
-        AppUser partner = user(UUID.randomUUID(), "자연", "기존상대");
+        AppUser partner = user(UUID.randomUUID(), Campus.NATURAL, "기존상대");
         Match existing = Match.create(targetUser, partner, TODAY, 72, "{}");
 
         when(analysisResultRepository.findByUser_UserIdAndAnalysisDate(targetId, TODAY))
@@ -175,14 +176,14 @@ class MatchServiceTest {
     @DisplayName("반대 캠퍼스 후보가 없으면 에러가 아니라 PENDING(매칭 대기)을 반환한다")
     void returnsPendingWhenNoCandidate() {
         UUID targetId = UUID.randomUUID();
-        AnalysisResult target = analysis(targetId, "인문", "타깃",
+        AnalysisResult target = analysis(targetId, Campus.HUMANITIES, "타깃",
                 featuresJson("카페", "오후", "공부", "차분함", "파란 계열"));
 
         when(analysisResultRepository.findByUser_UserIdAndAnalysisDate(targetId, TODAY))
                 .thenReturn(Optional.of(target));
         when(matchRepository.findByDateAndParticipant(TODAY, targetId)).thenReturn(Optional.empty());
         when(matchRepository.findByDate(TODAY)).thenReturn(List.of());
-        when(analysisResultRepository.findByAnalysisDateAndUser_CampusNotAndMatchDecision(TODAY, "인문", MatchDecision.ACCEPTED))
+        when(analysisResultRepository.findByAnalysisDateAndUser_CampusNotAndMatchDecision(TODAY, Campus.HUMANITIES, MatchDecision.ACCEPTED))
                 .thenReturn(List.of());
 
         MatchResultResponse result = matchService.createMatchForUser(targetId, TODAY);
@@ -254,7 +255,7 @@ class MatchServiceTest {
     @DisplayName("declineMatch: 매칭 전이면 거부 처리하고 DECLINED를 반환한다")
     void declineMarksDeclined() {
         UUID userId = UUID.randomUUID();
-        AnalysisResult target = analysis(userId, "인문", "타깃",
+        AnalysisResult target = analysis(userId, Campus.HUMANITIES, "타깃",
                 featuresJson("카페", "오후", "공부", "차분함", "파란 계열"));
         when(analysisResultRepository.findByUser_UserIdAndAnalysisDate(userId, TODAY))
                 .thenReturn(Optional.of(target));
@@ -270,9 +271,9 @@ class MatchServiceTest {
     @DisplayName("declineMatch: 이미 매칭된 뒤면 거부는 늦었으므로 MATCHED를 반환한다")
     void declineAfterMatchedReturnsMatched() {
         UUID userId = UUID.randomUUID();
-        AnalysisResult target = analysis(userId, "인문", "타깃",
+        AnalysisResult target = analysis(userId, Campus.HUMANITIES, "타깃",
                 featuresJson("카페", "오후", "공부", "차분함", "파란 계열"));
-        AppUser partner = user(UUID.randomUUID(), "자연", "상대");
+        AppUser partner = user(UUID.randomUUID(), Campus.NATURAL, "상대");
         Match existing = Match.create(target.getUser(), partner, TODAY, 90, "{}");
         when(analysisResultRepository.findByUser_UserIdAndAnalysisDate(userId, TODAY))
                 .thenReturn(Optional.of(target));
@@ -288,8 +289,8 @@ class MatchServiceTest {
     @DisplayName("getMatch: 오늘 매칭이 있으면 MATCHED와 상대 정보를 반환한다")
     void getMatchReturnsMatchedWhenExists() {
         UUID userId = UUID.randomUUID();
-        AppUser viewer = user(userId, "인문", "나");
-        AppUser partner = user(UUID.randomUUID(), "자연", "상대");
+        AppUser viewer = user(userId, Campus.HUMANITIES, "나");
+        AppUser partner = user(UUID.randomUUID(), Campus.NATURAL, "상대");
         Match existing = Match.create(viewer, partner, TODAY, 88, "{}");
 
         when(matchRepository.findByDateAndParticipant(TODAY, userId)).thenReturn(Optional.of(existing));
@@ -305,15 +306,15 @@ class MatchServiceTest {
     @DisplayName("features_json 이 깨져 있으면 FEATURES_DESERIALIZATION_FAILED")
     void throwsWhenFeaturesJsonBroken() {
         UUID targetId = UUID.randomUUID();
-        AnalysisResult target = analysis(targetId, "인문", "타깃", "{not json");
-        AnalysisResult candidate = analysis(UUID.randomUUID(), "자연", "상대",
+        AnalysisResult target = analysis(targetId, Campus.HUMANITIES, "타깃", "{not json");
+        AnalysisResult candidate = analysis(UUID.randomUUID(), Campus.NATURAL, "상대",
                 featuresJson("카페", "오후", "공부", "차분함", "파란 계열"));
 
         when(analysisResultRepository.findByUser_UserIdAndAnalysisDate(targetId, TODAY))
                 .thenReturn(Optional.of(target));
         when(matchRepository.findByDateAndParticipant(TODAY, targetId)).thenReturn(Optional.empty());
         when(matchRepository.findByDate(TODAY)).thenReturn(List.of());
-        when(analysisResultRepository.findByAnalysisDateAndUser_CampusNotAndMatchDecision(TODAY, "인문", MatchDecision.ACCEPTED))
+        when(analysisResultRepository.findByAnalysisDateAndUser_CampusNotAndMatchDecision(TODAY, Campus.HUMANITIES, MatchDecision.ACCEPTED))
                 .thenReturn(List.of(candidate));
 
         assertThatThrownBy(() -> matchService.createMatchForUser(targetId, TODAY))
@@ -325,8 +326,8 @@ class MatchServiceTest {
     @DisplayName("게이트2: 내가 수락했지만 상대가 아직이면 AWAITING_PARTNER, 유사도는 가려진다")
     void chatAcceptWaitsForPartner() {
         UUID userId = UUID.randomUUID();
-        AppUser viewer = user(userId, "인문", "나");
-        AppUser partner = user(UUID.randomUUID(), "자연", "상대");
+        AppUser viewer = user(userId, Campus.HUMANITIES, "나");
+        AppUser partner = user(UUID.randomUUID(), Campus.NATURAL, "상대");
         Match match = Match.create(viewer, partner, TODAY, 88, "{\"totalScore\":88}");
         when(matchRepository.findByDateAndParticipant(TODAY, userId)).thenReturn(Optional.of(match));
 
@@ -342,8 +343,8 @@ class MatchServiceTest {
     @DisplayName("게이트2: 양쪽 다 수락하면 CONNECTED, connectedAt 기록되고 유사도·근거가 공개된다")
     void chatBothAcceptConnects() {
         UUID userId = UUID.randomUUID();
-        AppUser viewer = user(userId, "인문", "나");
-        AppUser partner = user(UUID.randomUUID(), "자연", "상대");
+        AppUser viewer = user(userId, Campus.HUMANITIES, "나");
+        AppUser partner = user(UUID.randomUUID(), Campus.NATURAL, "상대");
         Match match = Match.create(viewer, partner, TODAY, 88, "{\"totalScore\":88}");
         match.applyChatDecision(partner.getUserId(), Gate2Decision.ACCEPTED); // 상대는 이미 수락한 상태
         when(matchRepository.findByDateAndParticipant(TODAY, userId)).thenReturn(Optional.of(match));
@@ -362,8 +363,8 @@ class MatchServiceTest {
     @DisplayName("게이트2: 거부하면 ENDED가 되고 점수는 공개되지 않는다")
     void chatRejectEnds() {
         UUID userId = UUID.randomUUID();
-        AppUser viewer = user(userId, "인문", "나");
-        AppUser partner = user(UUID.randomUUID(), "자연", "상대");
+        AppUser viewer = user(userId, Campus.HUMANITIES, "나");
+        AppUser partner = user(UUID.randomUUID(), Campus.NATURAL, "상대");
         Match match = Match.create(viewer, partner, TODAY, 88, "{}");
         when(matchRepository.findByDateAndParticipant(TODAY, userId)).thenReturn(Optional.of(match));
 
@@ -377,8 +378,8 @@ class MatchServiceTest {
     @DisplayName("게이트2: 이미 연결(CONNECTED)된 뒤 거부는 무시된다(터미널)")
     void chatDecisionAfterConnectedIsIgnored() {
         UUID userId = UUID.randomUUID();
-        AppUser viewer = user(userId, "인문", "나");
-        AppUser partner = user(UUID.randomUUID(), "자연", "상대");
+        AppUser viewer = user(userId, Campus.HUMANITIES, "나");
+        AppUser partner = user(UUID.randomUUID(), Campus.NATURAL, "상대");
         Match match = Match.create(viewer, partner, TODAY, 88, "{}");
         match.applyChatDecision(partner.getUserId(), Gate2Decision.ACCEPTED);
         match.applyChatDecision(userId, Gate2Decision.ACCEPTED); // 이미 연결됨
@@ -406,14 +407,14 @@ class MatchServiceTest {
     void matchedIncludesPartnerPhotosAndTags() {
         UUID userId = UUID.randomUUID();
         UUID partnerId = UUID.randomUUID();
-        AppUser viewer = user(userId, "인문", "나");
-        AppUser partner = user(partnerId, "자연", "상대");
+        AppUser viewer = user(userId, Campus.HUMANITIES, "나");
+        AppUser partner = user(partnerId, Campus.NATURAL, "상대");
         Match match = Match.create(viewer, partner, TODAY, 80, "{}");
 
         when(matchRepository.findByDateAndParticipant(TODAY, userId)).thenReturn(Optional.of(match));
         when(photoService.getTodayPhotoUrls(partnerId))
                 .thenReturn(List.of("https://s3/p1.jpg", "https://s3/p2.jpg"));
-        AnalysisResult partnerAnalysis = analysis(partnerId, "자연", "상대",
+        AnalysisResult partnerAnalysis = analysis(partnerId, Campus.NATURAL, "상대",
                 featuresJson("카페", "오후", "산책", "여유로움", "주황 계열"));
         when(analysisResultRepository.findByUser_UserIdAndAnalysisDate(partnerId, TODAY))
                 .thenReturn(Optional.of(partnerAnalysis));
@@ -431,14 +432,14 @@ class MatchServiceTest {
     @DisplayName("게이트2: 양쪽 수락으로 연결되면 F4 AI 코멘트를 생성해 저장·공개한다")
     void chatConnectGeneratesAiComment() {
         UUID userId = UUID.randomUUID();
-        AppUser viewer = user(userId, "인문", "나");
-        AppUser partner = user(UUID.randomUUID(), "자연", "상대");
+        AppUser viewer = user(userId, Campus.HUMANITIES, "나");
+        AppUser partner = user(UUID.randomUUID(), Campus.NATURAL, "상대");
         Match match = Match.create(viewer, partner, TODAY, 88, "{}");
         match.applyChatDecision(partner.getUserId(), Gate2Decision.ACCEPTED); // 상대는 이미 수락
 
         when(matchRepository.findByDateAndParticipant(TODAY, userId)).thenReturn(Optional.of(match));
         // featuresDtoOf: 두 유저 분석 조회(어느 id로 오든 동일 features 반환)
-        AnalysisResult anyAnalysis = analysis(UUID.randomUUID(), "인문", "누구",
+        AnalysisResult anyAnalysis = analysis(UUID.randomUUID(), Campus.HUMANITIES, "누구",
                 featuresJson("카페", "오후", "산책", "여유로움", "초록 계열"));
         when(analysisResultRepository.findByUser_UserIdAndAnalysisDate(any(), eq(TODAY)))
                 .thenReturn(Optional.of(anyAnalysis));
@@ -456,13 +457,13 @@ class MatchServiceTest {
     @DisplayName("게이트2: AI 코멘트 생성이 실패해도 매칭은 CONNECTED로 성사된다(코멘트만 null)")
     void chatConnectSurvivesAiFailure() {
         UUID userId = UUID.randomUUID();
-        AppUser viewer = user(userId, "인문", "나");
-        AppUser partner = user(UUID.randomUUID(), "자연", "상대");
+        AppUser viewer = user(userId, Campus.HUMANITIES, "나");
+        AppUser partner = user(UUID.randomUUID(), Campus.NATURAL, "상대");
         Match match = Match.create(viewer, partner, TODAY, 88, "{}");
         match.applyChatDecision(partner.getUserId(), Gate2Decision.ACCEPTED);
 
         when(matchRepository.findByDateAndParticipant(TODAY, userId)).thenReturn(Optional.of(match));
-        AnalysisResult anyAnalysis = analysis(UUID.randomUUID(), "인문", "누구",
+        AnalysisResult anyAnalysis = analysis(UUID.randomUUID(), Campus.HUMANITIES, "누구",
                 featuresJson("카페", "오후", "산책", "여유로움", "초록 계열"));
         when(analysisResultRepository.findByUser_UserIdAndAnalysisDate(any(), eq(TODAY)))
                 .thenReturn(Optional.of(anyAnalysis));
@@ -494,7 +495,7 @@ class MatchServiceTest {
         }
     }
 
-    private AppUser user(UUID userId, String campus, String nickname) {
+    private AppUser user(UUID userId, Campus campus, String nickname) {
         AppUser user = mock(AppUser.class);
         lenient().when(user.getUserId()).thenReturn(userId);
         lenient().when(user.getCampus()).thenReturn(campus);
@@ -502,7 +503,7 @@ class MatchServiceTest {
         return user;
     }
 
-    private AnalysisResult analysis(UUID userId, String campus, String nickname, String featuresJson) {
+    private AnalysisResult analysis(UUID userId, Campus campus, String nickname, String featuresJson) {
         AppUser user = user(userId, campus, nickname);
         AnalysisResult analysis = mock(AnalysisResult.class);
         lenient().when(analysis.getUser()).thenReturn(user);

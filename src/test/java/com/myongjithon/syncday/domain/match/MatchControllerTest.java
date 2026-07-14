@@ -2,6 +2,7 @@ package com.myongjithon.syncday.domain.match;
 
 import com.myongjithon.syncday.domain.match.dto.MatchResponse;
 import com.myongjithon.syncday.domain.match.dto.MatchResultResponse;
+import com.myongjithon.syncday.domain.user.Campus;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -50,7 +51,7 @@ class MatchControllerTest {
         UUID userId = UUID.randomUUID();
         MatchResultResponse matched = new MatchResultResponse(MatchStatus.MATCHED,
                 new MatchResponse(UUID.randomUUID(), LocalDate.now(), 77,
-                        UUID.randomUUID(), "상대", "자연", List.of(), List.of(), false, "{}", null));
+                        UUID.randomUUID(), "상대", Campus.NATURAL, List.of(), List.of(), false, "{}", null));
 
         when(matchService.createMatchForUser(eq(userId), any(LocalDate.class)))
                 .thenThrow(new DataIntegrityViolationException("uk_match_pair_date"));
@@ -94,7 +95,7 @@ class MatchControllerTest {
         UUID userId = UUID.randomUUID();
         MatchResultResponse connected = new MatchResultResponse(MatchStatus.CONNECTED,
                 new MatchResponse(UUID.randomUUID(), LocalDate.now(), 87,
-                        UUID.randomUUID(), "상대", "자연", List.of(), List.of(), true, "{}", "두 분 닮았어요"));
+                        UUID.randomUUID(), "상대", Campus.NATURAL, List.of(), List.of(), true, "{}", "두 분 닮았어요"));
         when(matchService.applyChatDecision(eq(userId), any(LocalDate.class), eq(Gate2Decision.ACCEPTED)))
                 .thenReturn(connected);
 
