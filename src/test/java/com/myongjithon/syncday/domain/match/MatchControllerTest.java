@@ -49,7 +49,7 @@ class MatchControllerTest {
         UUID userId = UUID.randomUUID();
         MatchResultResponse matched = new MatchResultResponse(MatchStatus.MATCHED,
                 new MatchResponse(UUID.randomUUID(), LocalDate.now(), 77,
-                        UUID.randomUUID(), "상대", "자연", false, "{}"));
+                        UUID.randomUUID(), "상대", "자연", false, "{}", null));
 
         when(matchService.createMatchForUser(eq(userId), any(LocalDate.class)))
                 .thenThrow(new DataIntegrityViolationException("uk_match_pair_date"));
@@ -93,7 +93,7 @@ class MatchControllerTest {
         UUID userId = UUID.randomUUID();
         MatchResultResponse connected = new MatchResultResponse(MatchStatus.CONNECTED,
                 new MatchResponse(UUID.randomUUID(), LocalDate.now(), 87,
-                        UUID.randomUUID(), "상대", "자연", true, "{}"));
+                        UUID.randomUUID(), "상대", "자연", true, "{}", "두 분 닮았어요"));
         when(matchService.applyChatDecision(eq(userId), any(LocalDate.class), eq(Gate2Decision.ACCEPTED)))
                 .thenReturn(connected);
 

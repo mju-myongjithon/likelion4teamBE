@@ -87,6 +87,10 @@ public class Match {
     @Column(name = "connected_at")
     private LocalDateTime connectedAt;
 
+    /** F4(ai-service)가 생성한 유사도 코멘트. 연결(CONNECTED) 시점에 1회 생성되며 그 전엔 null. */
+    @Column(name = "ai_comment", columnDefinition = "TEXT")
+    private String aiComment;
+
     @Builder(access = lombok.AccessLevel.PRIVATE)
     private Match(AppUser userA, AppUser userB, LocalDate date, int similarityScore, String scoreBreakdown) {
         this.userA = userA;
@@ -155,6 +159,11 @@ public class Match {
                 && normalize(chatDecisionB) == Gate2Decision.ACCEPTED) {
             this.connectedAt = LocalDateTime.now();
         }
+    }
+
+    /** F4가 생성한 AI 코멘트를 부여한다(연결 시점 1회). */
+    public void assignAiComment(String comment) {
+        this.aiComment = comment;
     }
 
     /** 게이트2에서 한 명이라도 거부해 종료됐는지. */

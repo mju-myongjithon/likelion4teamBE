@@ -2,6 +2,7 @@ package com.myongjithon.syncday.domain.match;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.myongjithon.syncday.domain.analysis.AiServiceClient;
 import com.myongjithon.syncday.domain.analysis.AnalysisResult;
 import com.myongjithon.syncday.domain.analysis.AnalysisResultRepository;
 import com.myongjithon.syncday.domain.analysis.MatchDecision;
@@ -29,6 +30,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -42,6 +44,8 @@ class MatchServiceTest {
     private AnalysisResultRepository analysisResultRepository;
     @Mock
     private MatchRepository matchRepository;
+    @Mock
+    private AiServiceClient aiServiceClient;
 
     private final SimilarityCalculator similarityCalculator = new SimilarityCalculator();
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -53,7 +57,7 @@ class MatchServiceTest {
     @BeforeEach
     void setUp() {
         matchService = new MatchService(
-                analysisResultRepository, matchRepository, similarityCalculator, objectMapper);
+                analysisResultRepository, matchRepository, similarityCalculator, objectMapper, aiServiceClient);
     }
 
     @Test
@@ -392,6 +396,55 @@ class MatchServiceTest {
         assertThatThrownBy(() -> matchService.applyChatDecision(userId, TODAY, Gate2Decision.ACCEPTED))
                 .isInstanceOf(MatchException.class)
                 .hasMessageContaining("매칭");
+    }
+
+    @Test
+    @DisplayName("게이트2: 양쪽 수락으로 연결되면 F4 AI 코멘트를 생성해 저장·공개한다")
+    void chatConnectGeneratesAiComment() {
+        UUID userId = UUID.randomUUID();
+        AppUser viewer = user(userId, "인문", "나");
+        AppUser partner = user(UUID.randomUUID(), "자연", "상대");
+        Match match = Match.create(viewer, partner, TODAY, 88, "{}");
+        match.applyChatDecision(partner.getUserId(), Gate2Decision.ACCEPTED); // 상대는 이미 수락
+
+        when(matchRepository.findByDateAndParticipant(TODAY, userId)).thenReturn(Optional.of(match));
+        // featuresDtoOf: 두 유저 분석 조회(어느 id로 오든 동일 features 반환)
+        AnalysisResult anyAnalysis = analysis(UUID.randomUUID(), "인문", "누구",
+                featuresJson("카페", "오후", "산책", "여유로움", "초록 계열"));
+        when(analysisResultRepository.findByUser_UserIdAndAnalysisDate(any(), eq(TODAY)))
+                .thenReturn(Optional.of(anyAnalysis));
+        when(aiServiceClient.generateDescription(any(), any(), eq(88)))
+                .thenReturn("두 분 다 여유로운 하루를 보냈어요");
+
+        MatchResultResponse result = matchService.applyChatDecision(userId, TODAY, Gate2Decision.ACCEPTED);
+
+        assertThat(result.status()).isEqualTo(MatchStatus.CONNECTED);
+        assertThat(result.match().aiComment()).isEqualTo("두 분 다 여유로운 하루를 보냈어요");
+        assertThat(match.getAiComment()).isEqualTo("두 분 다 여유로운 하루를 보냈어요");
+    }
+
+    @Test
+    @DisplayName("게이트2: AI 코멘트 생성이 실패해도 매칭은 CONNECTED로 성사된다(코멘트만 null)")
+    void chatConnectSurvivesAiFailure() {
+        UUID userId = UUID.randomUUID();
+        AppUser viewer = user(userId, "인문", "나");
+        AppUser partner = user(UUID.randomUUID(), "자연", "상대");
+        Match match = Match.create(viewer, partner, TODAY, 88, "{}");
+        match.applyChatDecision(partner.getUserId(), Gate2Decision.ACCEPTED);
+
+        when(matchRepository.findByDateAndParticipant(TODAY, userId)).thenReturn(Optional.of(match));
+        AnalysisResult anyAnalysis = analysis(UUID.randomUUID(), "인문", "누구",
+                featuresJson("카페", "오후", "산책", "여유로움", "초록 계열"));
+        when(analysisResultRepository.findByUser_UserIdAndAnalysisDate(any(), eq(TODAY)))
+                .thenReturn(Optional.of(anyAnalysis));
+        when(aiServiceClient.generateDescription(any(), any(), eq(88)))
+                .thenThrow(new RuntimeException("gemini down"));
+
+        MatchResultResponse result = matchService.applyChatDecision(userId, TODAY, Gate2Decision.ACCEPTED);
+
+        assertThat(result.status()).isEqualTo(MatchStatus.CONNECTED);
+        assertThat(result.match().aiComment()).isNull();
+        assertThat(match.isConnected()).isTrue();
     }
 
     // ---- helpers ----
