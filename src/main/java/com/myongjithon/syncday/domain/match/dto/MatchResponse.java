@@ -3,6 +3,7 @@ package com.myongjithon.syncday.domain.match.dto;
 import com.fasterxml.jackson.annotation.JsonRawValue;
 import com.myongjithon.syncday.domain.match.Match;
 import com.myongjithon.syncday.domain.user.AppUser;
+import com.myongjithon.syncday.domain.user.Campus;
 
 import java.time.LocalDate;
 import java.util.UUID;
@@ -18,7 +19,7 @@ public record MatchResponse(
         int similarityScore,
         UUID partnerId,
         String partnerNickname,
-        String partnerCampus,
+        Campus partnerCampus,
         boolean revealedToMe,
         @JsonRawValue String scoreBreakdown
 ) {
