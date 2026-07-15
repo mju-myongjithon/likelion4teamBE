@@ -15,6 +15,7 @@ import org.springframework.web.multipart.MultipartFile;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.rekognition.RekognitionClient;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
@@ -229,6 +230,14 @@ public class PhotoService {
     public void resetTodayPhotos(UUID userId) {
         TodayRange today = getTodayRange();
         List<Photo> todayPhotos = photoRepository.findByUser_UserIdAndUploadedAtBetween(userId, today.start(), today.end());
+
+        for (Photo photo : todayPhotos) {
+            s3Client.deleteObject(DeleteObjectRequest.builder()
+                    .bucket(bucketName)
+                    .key(photo.getS3Key())
+                    .build());
+        }
+
         photoRepository.deleteAll(todayPhotos);
     }
 

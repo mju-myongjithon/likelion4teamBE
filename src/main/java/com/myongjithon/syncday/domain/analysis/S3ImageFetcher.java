@@ -29,12 +29,10 @@ public class S3ImageFetcher {
     @Value("${aws.s3.bucket}")
     private String bucketName;
 
-    public String toDataUri(String imageUrl) {
-        String key = extractKey(imageUrl);
-
+    public String toDataUri(String s3Key) {
         GetObjectRequest request = GetObjectRequest.builder()
                 .bucket(bucketName)
-                .key(key)
+                .key(s3Key)
                 .build();
 
         try {
@@ -46,14 +44,8 @@ public class S3ImageFetcher {
             String base64 = Base64.getEncoder().encodeToString(objectBytes.asByteArray());
             return "data:" + contentType + ";base64," + base64;
         } catch (SdkException e) {
-            log.error("S3 이미지 다운로드 실패: key={}", key, e);
+            log.error("S3 이미지 다운로드 실패: key={}", s3Key, e);
             throw new AnalysisException(AnalysisErrorCode.AI_SERVICE_UNAVAILABLE);
         }
-    }
-
-    // imageUrl은 PhotoService.uploadToS3()에서 "https://{bucket}.s3.{region}.amazonaws.com/{key}"
-    // 형태로 저장되므로, 마지막 '/' 뒤가 곧 S3 객체 키다.
-    private String extractKey(String imageUrl) {
-        return imageUrl.substring(imageUrl.lastIndexOf('/') + 1);
     }
 }
