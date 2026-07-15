@@ -49,12 +49,12 @@ class AnalysisFeaturesTest {
     @DisplayName("scene/activity 는 category 만 취하고 detail 은 버린다")
     void takesCategoryAndDropsDetail() {
         FeaturesDto dto = new FeaturesDto(
-                List.of(new SceneEntryDto("카페", "홍대 감성 카페"),
-                        new SceneEntryDto("체육시설", "수영장")),
+                List.of(new SceneEntryDto("카페", "홍대 감성 카페", 0),
+                        new SceneEntryDto("체육시설", "수영장", 1)),
                 List.of("아침", "저녁"),
                 List.of("차분함"),
                 List.of("주황 계열"),
-                List.of(new ActivityEntryDto("운동", "수영")),
+                List.of(new ActivityEntryDto("운동", "수영", 0)),
                 "아침 수영으로 상쾌하게 시작한 하루");
 
         AnalysisFeatures features = AnalysisFeatures.from(dto);
@@ -69,8 +69,8 @@ class AnalysisFeaturesTest {
     @Test
     @DisplayName("detail 이 달라도 category 가 같으면 유사도 1.0 이다")
     void detailDoesNotAffectSimilarity() {
-        FeaturesDto a = sceneOnly(new SceneEntryDto("카페", "홍대 감성 카페"));
-        FeaturesDto b = sceneOnly(new SceneEntryDto("카페", "학교 앞 프랜차이즈 카페"));
+        FeaturesDto a = sceneOnly(new SceneEntryDto("카페", "홍대 감성 카페", 0));
+        FeaturesDto b = sceneOnly(new SceneEntryDto("카페", "학교 앞 프랜차이즈 카페", 0));
 
         SimilarityResult result = new SimilarityCalculator()
                 .calculate(AnalysisFeatures.from(a), AnalysisFeatures.from(b));

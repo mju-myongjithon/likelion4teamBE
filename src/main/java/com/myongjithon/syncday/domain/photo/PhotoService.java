@@ -90,7 +90,7 @@ public class PhotoService {
     public List<PhotoUploadResponse> getTodayPhotos(UUID userId) {
         TodayRange today = getTodayRange();
 
-        List<Photo> photos = photoRepository.findByUser_UserIdAndUploadedAtBetween(
+        List<Photo> photos = photoRepository.findByUser_UserIdAndUploadedAtBetweenOrderByUploadedAtAsc(
                 userId, today.start(), today.end()
         );
 
@@ -229,7 +229,7 @@ public class PhotoService {
     @Transactional
     public void resetTodayPhotos(UUID userId) {
         TodayRange today = getTodayRange();
-        List<Photo> todayPhotos = photoRepository.findByUser_UserIdAndUploadedAtBetween(userId, today.start(), today.end());
+        List<Photo> todayPhotos = photoRepository.findByUser_UserIdAndUploadedAtBetweenOrderByUploadedAtAsc(userId, today.start(), today.end());
 
         for (Photo photo : todayPhotos) {
             s3Client.deleteObject(DeleteObjectRequest.builder()

@@ -55,7 +55,7 @@ public class AnalysisService {
         LocalDateTime startOfDay = today.atStartOfDay();
         LocalDateTime endOfDay = startOfDay.plusDays(1).minusNanos(1);
 
-        List<Photo> todayPhotos = photoRepository.findByUser_UserIdAndUploadedAtBetween(
+        List<Photo> todayPhotos = photoRepository.findByUser_UserIdAndUploadedAtBetweenOrderByUploadedAtAsc(
                 userId, startOfDay, endOfDay
         );
 

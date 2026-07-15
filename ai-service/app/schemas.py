@@ -1,4 +1,4 @@
-from typing import List, Literal, get_args
+from typing import List, Literal, Optional, get_args
 
 from pydantic import BaseModel, Field
 
@@ -36,11 +36,17 @@ class FeatureExtractRequest(BaseModel):
 class SceneEntry(BaseModel):
     category: str  # SCENE_CATEGORY_TAGS 중 하나로 고정됨 (F3 매칭용)
     detail: str  # 자유 표현, 구체적인 디테일 (F4/F6 설명용, 예: "홍대 감성 카페")
+    # 이 장면이 관찰된 사진의 0-based 순서 (요청에 담긴 imageUrls 순서 기준).
+    # Gemini가 스키마상 int는 항상 채우지만 값 자체가 범위 밖일 수 있어(모델 환각),
+    # extract_day_features()에서 검증 후 범위 밖이면 None으로 비운다 — 그러면 FE가
+    # 순서대로 돌려붙이는 기존 방식으로 안전하게 대체한다.
+    photoIndex: Optional[int] = None
 
 
 class ActivityEntry(BaseModel):
     category: str  # ACTIVITY_CATEGORY_TAGS 중 하나로 고정됨 (F3 매칭용)
     detail: str  # 자유 표현, 구체적인 디테일 (예: "수영")
+    photoIndex: Optional[int] = None  # SceneEntry.photoIndex와 동일한 규칙
 
 
 class DayFeatures(BaseModel):
