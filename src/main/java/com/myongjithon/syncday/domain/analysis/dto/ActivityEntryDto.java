@@ -11,4 +11,5 @@ public class ActivityEntryDto {
 
     private String category;
     private String detail;
+    private Integer photoIndex;
 }

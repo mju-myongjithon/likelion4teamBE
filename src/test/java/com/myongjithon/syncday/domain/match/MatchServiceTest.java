@@ -482,11 +482,11 @@ class MatchServiceTest {
     /** ai-service 가 반환하는 features 를 그대로 직렬화한 JSON. 차원마다 값 하나씩만 둔다. */
     private String featuresJson(String scene, String time, String activity, String mood, String color) {
         FeaturesDto dto = new FeaturesDto(
-                List.of(new SceneEntryDto(scene, scene + " 디테일")),
+                List.of(new SceneEntryDto(scene, scene + " 디테일", 0)),
                 List.of(time),
                 List.of(mood),
                 List.of(color),
-                List.of(new ActivityEntryDto(activity, activity + " 디테일")),
+                List.of(new ActivityEntryDto(activity, activity + " 디테일", 0)),
                 "하루 요약");
         try {
             return objectMapper.writeValueAsString(dto);

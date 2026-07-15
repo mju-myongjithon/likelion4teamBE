@@ -25,11 +25,13 @@ from app.schemas import ActivityCategoryTag, ColorTag, DayFeatures, MoodTag, Sce
 class _SceneEntrySchema(BaseModel):
     category: SceneCategoryTag  # 고정 목록만 허용 (F3 매칭용, 100% 강제)
     detail: str  # 자유 표현 (F4/F6 설명용, 예: "홍대 감성 카페")
+    photoIndex: int  # 몇 번째 사진(0-based)에서 관찰됐는지
 
 
 class _ActivityEntrySchema(BaseModel):
     category: ActivityCategoryTag
     detail: str
+    photoIndex: int
 
 
 class _FeatureExtractionSchema(BaseModel):
@@ -109,10 +111,12 @@ def _load_image_part(url: str) -> types.Part:
 def extract_day_features(image_urls: List[str]) -> DayFeatures:
     parts = [
         types.Part.from_text(
-            text="다음은 한 학생이 오늘 하루 동안 찍은 사진들입니다. 모두 종합해서 하루의 특징을 분석해주세요."
+            text="다음은 한 학생이 오늘 하루 동안 찍은 사진들입니다. 모두 종합해서 하루의 특징을 분석해주세요. "
+            "각 사진에는 '사진 N'이라는 번호(0부터 시작)를 붙였으니, scene/activity의 photoIndex를 채울 때 이 번호를 그대로 쓰세요."
         )
     ]
-    for url in image_urls:
+    for i, url in enumerate(image_urls):
+        parts.append(types.Part.from_text(text=f"사진 {i}:"))
         parts.append(_load_image_part(url))
 
     generation_kwargs = dict(

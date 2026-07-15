@@ -36,11 +36,13 @@ class FeatureExtractRequest(BaseModel):
 class SceneEntry(BaseModel):
     category: str  # SCENE_CATEGORY_TAGS 중 하나로 고정됨 (F3 매칭용)
     detail: str  # 자유 표현, 구체적인 디테일 (F4/F6 설명용, 예: "홍대 감성 카페")
+    photoIndex: int  # 이 장면이 관찰된 사진의 0-based 순서 (요청에 담긴 imageUrls 순서 기준)
 
 
 class ActivityEntry(BaseModel):
     category: str  # ACTIVITY_CATEGORY_TAGS 중 하나로 고정됨 (F3 매칭용)
     detail: str  # 자유 표현, 구체적인 디테일 (예: "수영")
+    photoIndex: int  # 이 활동이 관찰된 사진의 0-based 순서 (요청에 담긴 imageUrls 순서 기준)
 
 
 class DayFeatures(BaseModel):
