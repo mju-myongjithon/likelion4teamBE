@@ -138,6 +138,7 @@ public class MatchService {
                 .orElseThrow(() -> new MatchException(MatchErrorCode.MATCH_NOT_FOUND));
         match.applyChatDecision(userId, decision);
         maybeGenerateAiComment(match, date);
+        maybeGenerateIcebreaker(match, date);
         return toResult(match, userId);
     }
 
@@ -178,6 +179,23 @@ public class MatchService {
             match.assignAiComment(aiServiceClient.generateDescription(a, b, match.getSimilarityScore()));
         } catch (Exception e) {
             log.warn("AI 코멘트 생성 실패 (matchId={}) — 매칭은 유지하고 코멘트만 보류", match.getMatchId(), e);
+        }
+    }
+
+    /**
+     * 매칭이 CONNECTED(양쪽 채팅 수락) 되는 순간 F6으로 아이스브레이킹 질문을 1회 생성한다.
+     * AI 호출 실패는 매칭 성사를 막지 않는다 — 질문만 null 로 두고 넘어간다(트랜잭션은 그대로 커밋).
+     */
+    private void maybeGenerateIcebreaker(Match match, LocalDate date) {
+        if (!match.isConnected() || match.getIcebreakerQuestion() != null) {
+            return;
+        }
+        try {
+            FeaturesDto a = featuresDtoOf(match.getUserA().getUserId(), date);
+            FeaturesDto b = featuresDtoOf(match.getUserB().getUserId(), date);
+            match.assignIcebreakerQuestion(aiServiceClient.generateIcebreaker(a, b));
+        } catch (Exception e) {
+            log.warn("아이스브레이킹 질문 생성 실패 (matchId={}) — 매칭은 유지하고 질문만 보류", match.getMatchId(), e);
         }
     }
 

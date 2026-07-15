@@ -4,6 +4,8 @@ import com.myongjithon.syncday.domain.analysis.dto.AiDescriptionRequest;
 import com.myongjithon.syncday.domain.analysis.dto.AiDescriptionResponse;
 import com.myongjithon.syncday.domain.analysis.dto.AiFeatureRequest;
 import com.myongjithon.syncday.domain.analysis.dto.AiFeatureResponse;
+import com.myongjithon.syncday.domain.analysis.dto.AiIcebreakerRequest;
+import com.myongjithon.syncday.domain.analysis.dto.AiIcebreakerResponse;
 import com.myongjithon.syncday.domain.analysis.dto.FeaturesDto;
 import com.myongjithon.syncday.global.exception.AnalysisErrorCode;
 import com.myongjithon.syncday.global.exception.AnalysisException;
@@ -22,6 +24,7 @@ import java.util.UUID;
  * ai-service 호출 클라이언트.
  * F2(POST /api/v1/features) — 사진 특징 추출.
  * F4(POST /api/v1/description) — 매칭 두 유저의 유사도 코멘트 생성.
+ * F6(POST /api/v1/icebreaker) — 매칭 두 유저의 아이스브레이킹 질문 생성.
  */
 @Slf4j
 @Component
@@ -67,6 +70,27 @@ public class AiServiceClient {
             return response == null ? null : response.description();
         } catch (RestClientException e) {
             log.error("ai-service 설명(F4) 호출 실패", e);
+            throw new AnalysisException(AnalysisErrorCode.AI_SERVICE_UNAVAILABLE);
+        }
+    }
+
+    /**
+     * F6: 매칭된 두 유저의 하루 특징을 보내 아이스브레이킹 질문을 생성한다.
+     * (유사도 점수는 필요 없음 — F4와 달리 순수하게 공통점 기반 질문만 생성한다.)
+     */
+    public String generateIcebreaker(FeaturesDto userA, FeaturesDto userB) {
+        AiIcebreakerRequest request = new AiIcebreakerRequest(userA, userB);
+
+        try {
+            AiIcebreakerResponse response = aiServiceRestClient.post()
+                    .uri("/api/v1/icebreaker")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(request)
+                    .retrieve()
+                    .body(AiIcebreakerResponse.class);
+            return response == null ? null : response.question();
+        } catch (RestClientException e) {
+            log.error("ai-service 아이스브레이킹(F6) 호출 실패", e);
             throw new AnalysisException(AnalysisErrorCode.AI_SERVICE_UNAVAILABLE);
         }
     }

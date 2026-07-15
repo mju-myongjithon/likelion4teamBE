@@ -95,6 +95,10 @@ public class Match {
     @Column(name = "ai_comment", columnDefinition = "TEXT")
     private String aiComment;
 
+    /** F6(ai-service)가 생성한 아이스브레이킹 질문. 연결(CONNECTED) 시점에 1회 생성되며 그 전엔 null. */
+    @Column(name = "icebreaker_question", columnDefinition = "TEXT")
+    private String icebreakerQuestion;
+
     @Builder(access = lombok.AccessLevel.PRIVATE)
     private Match(AppUser userA, AppUser userB, LocalDate date, int similarityScore, String scoreBreakdown) {
         this.userA = userA;
@@ -168,6 +172,11 @@ public class Match {
     /** F4가 생성한 AI 코멘트를 부여한다(연결 시점 1회). */
     public void assignAiComment(String comment) {
         this.aiComment = comment;
+    }
+
+    /** F6이 생성한 아이스브레이킹 질문을 부여한다(연결 시점 1회). */
+    public void assignIcebreakerQuestion(String question) {
+        this.icebreakerQuestion = question;
     }
 
     /** 게이트2에서 한 명이라도 거부해 종료됐는지. */
