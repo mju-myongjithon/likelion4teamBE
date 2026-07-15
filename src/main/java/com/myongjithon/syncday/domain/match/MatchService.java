@@ -2,23 +2,26 @@ package com.myongjithon.syncday.domain.match;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.myongjithon.syncday.domain.analysis.AiServiceClient;
 import com.myongjithon.syncday.domain.analysis.AnalysisResult;
 import com.myongjithon.syncday.domain.analysis.AnalysisResultRepository;
 import com.myongjithon.syncday.domain.analysis.MatchDecision;
 import com.myongjithon.syncday.domain.analysis.dto.FeaturesDto;
-import com.myongjithon.syncday.domain.match.dto.MatchResponse;
 import com.myongjithon.syncday.domain.match.dto.MatchResultResponse;
 import com.myongjithon.syncday.domain.match.similarity.AnalysisFeatures;
 import com.myongjithon.syncday.domain.match.similarity.SimilarityCalculator;
 import com.myongjithon.syncday.domain.match.similarity.SimilarityResult;
+import com.myongjithon.syncday.domain.photo.PhotoService;
 import com.myongjithon.syncday.domain.user.AppUser;
 import com.myongjithon.syncday.global.exception.MatchErrorCode;
 import com.myongjithon.syncday.global.exception.MatchException;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -26,6 +29,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class MatchService {
@@ -34,6 +38,8 @@ public class MatchService {
     private final MatchRepository matchRepository;
     private final SimilarityCalculator similarityCalculator;
     private final ObjectMapper objectMapper;
+    private final AiServiceClient aiServiceClient;
+    private final PhotoService photoService;
 
     /**
      * 대상 유저가 매칭을 <b>수락</b>하고(게이트1 opt-in) 매칭을 시도한다. 이미 매칭돼 있으면 기존 결과를 그대로 반환한다(멱등).
@@ -54,7 +60,7 @@ public class MatchService {
         // 멱등성: 오늘 이미 매칭됐다면 재계산 없이 기존 매칭 반환.
         Optional<Match> existing = matchRepository.findByDateAndParticipant(date, userId);
         if (existing.isPresent()) {
-            return MatchResultResponse.matched(MatchResponse.of(existing.get(), userId));
+            return toResult(existing.get(), userId);
         }
 
         AppUser targetUser = target.getUser();
@@ -100,7 +106,7 @@ public class MatchService {
         // 컨트롤러가 "이미 성사된 매칭 조회"로 복구(멱등)할 수 있게 한다.
         Match saved = matchRepository.saveAndFlush(match);
 
-        return MatchResultResponse.matched(MatchResponse.of(saved, userId));
+        return toResult(saved, userId);
     }
 
     /**
@@ -114,11 +120,25 @@ public class MatchService {
 
         Optional<Match> existing = matchRepository.findByDateAndParticipant(date, userId);
         if (existing.isPresent()) {
-            return MatchResultResponse.matched(MatchResponse.of(existing.get(), userId));
+            return toResult(existing.get(), userId);
         }
 
         target.declineMatching();
         return MatchResultResponse.declined();
+    }
+
+    /**
+     * 게이트2: 뷰어가 채팅 참여를 수락/거부한다. 매칭이 성사된 뒤에만 유효하다.
+     * 양쪽이 모두 수락하면 매칭이 연결(CONNECTED)되고 connectedAt 이 기록되어 F5가 채팅방을 연다.
+     * 관리 엔티티라 커밋 시 변경이 자동 반영된다(멱등: 이미 연결/종료면 변화 없음).
+     */
+    @Transactional
+    public MatchResultResponse applyChatDecision(UUID userId, LocalDate date, Gate2Decision decision) {
+        Match match = matchRepository.findByDateAndParticipant(date, userId)
+                .orElseThrow(() -> new MatchException(MatchErrorCode.MATCH_NOT_FOUND));
+        match.applyChatDecision(userId, decision);
+        maybeGenerateAiComment(match, date);
+        return toResult(match, userId);
     }
 
     /**
@@ -130,7 +150,7 @@ public class MatchService {
     public MatchResultResponse getMatch(UUID userId, LocalDate date) {
         Optional<Match> match = matchRepository.findByDateAndParticipant(date, userId);
         if (match.isPresent()) {
-            return MatchResultResponse.matched(MatchResponse.of(match.get(), userId));
+            return toResult(match.get(), userId);
         }
 
         // 매칭 전이면 유저의 수락/거부 상태로 화면을 구분해준다.
@@ -144,11 +164,78 @@ public class MatchService {
                 .orElseGet(MatchResultResponse::notRequested);
     }
 
+    /**
+     * 매칭이 CONNECTED(양쪽 채팅 수락) 되는 순간 F4로 AI 코멘트를 1회 생성한다.
+     * AI 호출 실패는 매칭 성사를 막지 않는다 — 코멘트만 null 로 두고 넘어간다(트랜잭션은 그대로 커밋).
+     */
+    private void maybeGenerateAiComment(Match match, LocalDate date) {
+        if (!match.isConnected() || match.getAiComment() != null) {
+            return;
+        }
+        try {
+            FeaturesDto a = featuresDtoOf(match.getUserA().getUserId(), date);
+            FeaturesDto b = featuresDtoOf(match.getUserB().getUserId(), date);
+            match.assignAiComment(aiServiceClient.generateDescription(a, b, match.getSimilarityScore()));
+        } catch (Exception e) {
+            log.warn("AI 코멘트 생성 실패 (matchId={}) — 매칭은 유지하고 코멘트만 보류", match.getMatchId(), e);
+        }
+    }
+
+    private FeaturesDto featuresDtoOf(UUID userId, LocalDate date) {
+        AnalysisResult analysis = analysisResultRepository.findByUser_UserIdAndAnalysisDate(userId, date)
+                .orElseThrow(() -> new MatchException(MatchErrorCode.ANALYSIS_NOT_FOUND));
+        return deserialize(analysis);
+    }
+
+    /**
+     * 매칭 행이 있을 때 상대 사진·태그까지 채워 응답을 조립한다.
+     * 상대 신원·사진·태그는 MATCHED부터 공개된다(사진은 업로드 시 이미 얼굴 블러 처리됨).
+     * 그 안에서 유사도·근거·AI코멘트는 다시 CONNECTED로 게이팅된다.
+     * (공개 시점 소유권은 F5 reveal 열린 항목 — 현재는 MATCHED 공개로 둔다.)
+     */
+    private MatchResultResponse toResult(Match match, UUID viewerId) {
+        UUID partnerId = match.isUserA(viewerId)
+                ? match.getUserB().getUserId()
+                : match.getUserA().getUserId();
+        List<String> partnerPhotoUrls = photoService.getTodayPhotoUrls(partnerId);
+        List<String> partnerTags = partnerTags(partnerId, match.getDate());
+        return MatchResultResponse.fromMatch(match, viewerId, partnerPhotoUrls, partnerTags);
+    }
+
+    /** 상대의 오늘 분석에서 대표 태그(장소 카테고리 · 시간대 · 분위기)를 뽑는다. 분석이 없으면 빈 목록. */
+    private List<String> partnerTags(UUID partnerId, LocalDate date) {
+        return analysisResultRepository.findByUser_UserIdAndAnalysisDate(partnerId, date)
+                .map(this::deserialize)
+                .map(this::flattenTags)
+                .orElseGet(List::of);
+    }
+
+    private List<String> flattenTags(FeaturesDto f) {
+        List<String> tags = new ArrayList<>();
+        if (f.getScene() != null) {
+            f.getScene().forEach(s -> tags.add(s.getCategory()));
+        }
+        if (f.getTimeOfDay() != null) {
+            tags.addAll(f.getTimeOfDay());
+        }
+        if (f.getMood() != null) {
+            tags.addAll(f.getMood());
+        }
+        return tags.stream()
+                .filter(t -> t != null && !t.isBlank())
+                .distinct()
+                .limit(6)
+                .toList();
+    }
+
     /** F2가 통짜 JSON으로 저장한 features를 유사도 계산 입력으로 되돌린다. */
     private AnalysisFeatures toFeatures(AnalysisResult analysis) {
+        return AnalysisFeatures.from(deserialize(analysis));
+    }
+
+    private FeaturesDto deserialize(AnalysisResult analysis) {
         try {
-            FeaturesDto features = objectMapper.readValue(analysis.getFeaturesJson(), FeaturesDto.class);
-            return AnalysisFeatures.from(features);
+            return objectMapper.readValue(analysis.getFeaturesJson(), FeaturesDto.class);
         } catch (JsonProcessingException e) {
             throw new MatchException(MatchErrorCode.FEATURES_DESERIALIZATION_FAILED);
         }

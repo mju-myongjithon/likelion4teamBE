@@ -15,6 +15,7 @@ import org.springframework.web.multipart.MultipartFile;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.rekognition.RekognitionClient;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
@@ -95,6 +96,13 @@ public class PhotoService {
 
         return photos.stream()
                 .map(photo -> PhotoUploadResponse.from(photo, generatePresignedUrl(photo.getS3Key())))
+                .toList();
+    }
+
+    /** 특정 유저의 오늘 사진 presigned URL 목록. 매칭 상대 사진 노출(F3)에서 재사용한다. */
+    public List<String> getTodayPhotoUrls(UUID userId) {
+        return getTodayPhotos(userId).stream()
+                .map(PhotoUploadResponse::getImageUrl)
                 .toList();
     }
 
@@ -222,6 +230,14 @@ public class PhotoService {
     public void resetTodayPhotos(UUID userId) {
         TodayRange today = getTodayRange();
         List<Photo> todayPhotos = photoRepository.findByUser_UserIdAndUploadedAtBetween(userId, today.start(), today.end());
+
+        for (Photo photo : todayPhotos) {
+            s3Client.deleteObject(DeleteObjectRequest.builder()
+                    .bucket(bucketName)
+                    .key(photo.getS3Key())
+                    .build());
+        }
+
         photoRepository.deleteAll(todayPhotos);
     }
 

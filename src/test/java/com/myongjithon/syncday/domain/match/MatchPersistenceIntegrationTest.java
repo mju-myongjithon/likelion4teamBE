@@ -4,6 +4,7 @@ import com.myongjithon.syncday.domain.analysis.AnalysisResult;
 import com.myongjithon.syncday.domain.analysis.AnalysisResultRepository;
 import com.myongjithon.syncday.domain.analysis.MatchDecision;
 import com.myongjithon.syncday.domain.user.AppUser;
+import com.myongjithon.syncday.domain.user.Campus;
 import io.zonky.test.db.AutoConfigureEmbeddedDatabase;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -56,7 +57,7 @@ class MatchPersistenceIntegrationTest {
     @Test
     @DisplayName("analysis_result 의 features_json 이 한글 포함 그대로 왕복 저장된다")
     void featuresJsonRoundTrip() {
-        AppUser user = persistUser("인문", "타깃");
+        AppUser user = persistUser(Campus.HUMANITIES, "타깃");
         em.persist(AnalysisResult.builder()
                 .user(user)
                 .analysisDate(TODAY)
@@ -76,10 +77,10 @@ class MatchPersistenceIntegrationTest {
     @Test
     @DisplayName("후보 쿼리는 반대 캠퍼스 & 매칭 수락(ACCEPTED)한 유저만 반환한다")
     void findsOppositeCampusAcceptedOnly() {
-        AppUser humanities = persistUser("인문", "인문A");        // 같은 캠퍼스 → 제외
-        AppUser science = persistUser("자연", "자연B");            // 반대 & 수락 → 포함
-        AppUser scienceUndecided = persistUser("자연", "자연미정"); // 반대지만 미수락(NONE) → 제외
-        AppUser scienceDeclined = persistUser("자연", "자연거부");  // 반대지만 거부(DECLINED) → 제외
+        AppUser humanities = persistUser(Campus.HUMANITIES, "인문A");        // 같은 캠퍼스 → 제외
+        AppUser science = persistUser(Campus.NATURAL, "자연B");            // 반대 & 수락 → 포함
+        AppUser scienceUndecided = persistUser(Campus.NATURAL, "자연미정"); // 반대지만 미수락(NONE) → 제외
+        AppUser scienceDeclined = persistUser(Campus.NATURAL, "자연거부");  // 반대지만 거부(DECLINED) → 제외
         persistAnalysis(humanities, MatchDecision.ACCEPTED);
         persistAnalysis(science, MatchDecision.ACCEPTED);
         persistAnalysis(scienceUndecided, MatchDecision.NONE);
@@ -88,7 +89,7 @@ class MatchPersistenceIntegrationTest {
         em.clear();
 
         List<AnalysisResult> candidates = analysisResultRepository
-                .findByAnalysisDateAndUser_CampusNotAndMatchDecision(TODAY, "인문", MatchDecision.ACCEPTED);
+                .findByAnalysisDateAndUser_CampusNotAndMatchDecision(TODAY, Campus.HUMANITIES, MatchDecision.ACCEPTED);
 
         assertThat(candidates).hasSize(1);
         assertThat(candidates.get(0).getUser().getNickname()).isEqualTo("자연B");
@@ -97,8 +98,8 @@ class MatchPersistenceIntegrationTest {
     @Test
     @DisplayName("같은 (쌍, 날짜) 매칭은 순서를 뒤집어도 유니크 제약에 걸린다")
     void duplicatePairViolatesUniqueConstraint() {
-        AppUser a = persistUser("인문", "A");
-        AppUser b = persistUser("자연", "B");
+        AppUser a = persistUser(Campus.HUMANITIES, "A");
+        AppUser b = persistUser(Campus.NATURAL, "B");
         em.flush();
 
         matchRepository.saveAndFlush(Match.create(a, b, TODAY, 80, "{\"totalScore\":80}"));
@@ -112,8 +113,8 @@ class MatchPersistenceIntegrationTest {
     @Test
     @DisplayName("findByDateAndParticipant 는 A/B 어느 쪽 유저로도 매칭을 찾는다")
     void findsMatchByEitherParticipant() {
-        AppUser a = persistUser("인문", "A");
-        AppUser b = persistUser("자연", "B");
+        AppUser a = persistUser(Campus.HUMANITIES, "A");
+        AppUser b = persistUser(Campus.NATURAL, "B");
         em.flush();
         Match saved = matchRepository.saveAndFlush(Match.create(a, b, TODAY, 80, "{\"totalScore\":80}"));
         em.clear();
@@ -128,7 +129,7 @@ class MatchPersistenceIntegrationTest {
 
     // ---- helpers ----
 
-    private AppUser persistUser(String campus, String nickname) {
+    private AppUser persistUser(Campus campus, String nickname) {
         AppUser user = AppUser.builder().campus(campus).nickname(nickname).build();
         return em.persist(user);
     }
