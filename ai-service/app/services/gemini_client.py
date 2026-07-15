@@ -108,6 +108,23 @@ def _load_image_part(url: str) -> types.Part:
     return types.Part.from_bytes(data=data, mime_type=mime_type)
 
 
+def _sanitize_photo_indices(features: DayFeatures, photo_count: int) -> DayFeatures:
+    """Gemini에게 photoIndex를 정확히 채우라고 프롬프트로 지시해도, 스키마가 강제하는 건
+    "정수 하나"일 뿐 그 값이 실제 사진 개수 범위 안인지는 보장 못 한다(모델이 가끔
+    범위 밖 값을 낼 수 있음). 여기서 걸러내지 않으면 FE가 photos[photoIndex]로 접근할 때
+    엉뚱한 사진이 매칭되는 문제가 다른 경로로 재발한다. 범위 밖이면 그 항목의 photoIndex만
+    비워서(None) FE가 이미 갖고 있는 폴백(순서대로 돌려붙이기)으로 안전하게 넘어가게 한다."""
+
+    def clean(entry):
+        if entry.photoIndex is not None and not (0 <= entry.photoIndex < photo_count):
+            return entry.model_copy(update={"photoIndex": None})
+        return entry
+
+    features.scene = [clean(s) for s in features.scene]
+    features.activity = [clean(a) for a in features.activity]
+    return features
+
+
 def extract_day_features(image_urls: List[str]) -> DayFeatures:
     parts = [
         types.Part.from_text(
@@ -134,7 +151,7 @@ def extract_day_features(image_urls: List[str]) -> DayFeatures:
     response = _generate_with_retry(**generation_kwargs)
     try:
         data = json.loads(response.text)
-        return DayFeatures(**data)
+        return _sanitize_photo_indices(DayFeatures(**data), len(image_urls))
     except (json.JSONDecodeError, TypeError, ValueError):
         # 모델이 스키마에서 벗어난 JSON을 내놓는 드문 경우, 백오프 없이 딱 1번만 더 호출한다.
         # (_generate_with_retry를 또 부르면 재시도가 중첩되어 최악의 경우 호출이 크게 늘어남)
@@ -142,7 +159,7 @@ def extract_day_features(image_urls: List[str]) -> DayFeatures:
         client = get_client()
         response = client.models.generate_content(**generation_kwargs)
         data = json.loads(response.text)
-        return DayFeatures(**data)
+        return _sanitize_photo_indices(DayFeatures(**data), len(image_urls))
 
 
 def generate_description(user_a: DayFeatures, user_b: DayFeatures, score: float) -> str:
