@@ -38,4 +38,17 @@ public class AppUser {
         this.nickname = nickname;
         this.currentStreak = 0;
     }
+
+    public void updateStreak(LocalDate today) {
+        if (today.equals(lastParticipationDate)) {
+            return;
+        }
+        int streak = (currentStreak == null ? 0 : currentStreak);
+        if (lastParticipationDate != null && lastParticipationDate.equals(today.minusDays(1))) {
+            this.currentStreak = streak + 1;
+        } else {
+            this.currentStreak = 1;
+        }
+        this.lastParticipationDate = today;
+    }
 }

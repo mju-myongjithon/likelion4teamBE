@@ -22,10 +22,6 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-/**
- * F1(사진 업로드)과 F2(AI 특징 추출, ai-service)를 잇는 오케스트레이션 서비스.
- * "오늘의 나를 분석하기" 버튼이 호출하는 지점.
- */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -42,8 +38,6 @@ public class AnalysisService {
     public AnalyzeResponse analyzeToday(UUID userId) {
         LocalDate today = LocalDate.now();
 
-        // 이미 오늘 분석한 기록이 있으면 새로 만들지 않고 기존 결과를 그대로 돌려준다.
-        // (버튼을 두 번 누르거나 네트워크 지연으로 중복 호출돼도 중복 레코드가 안 생기게)
         Optional<AnalysisResult> existing = analysisResultRepository.findByUser_UserIdAndAnalysisDate(userId, today);
         if (existing.isPresent()) {
             return toResponse(existing.get());
@@ -75,18 +69,17 @@ public class AnalysisService {
                 .analysisDate(today)
                 .featuresJson(toJson(aiResponse))
                 .build();
-        // saveAndFlush: 짧은 간격의 중복 요청이 동시에 여기까지 오면 유니크 제약(uk_analysis_user_date)에 걸린다.
-        // 이 위반을 커밋 지연이 아니라 이 지점에서 DataIntegrityViolationException으로 즉시 드러내
-        // 컨트롤러가 "이미 분석된 결과 조회"로 복구(멱등)할 수 있게 한다.
         AnalysisResult saved = analysisResultRepository.saveAndFlush(analysisResult);
+
+        user.updateStreak(today);
 
         List<UUID> photoIds = todayPhotos.stream().map(Photo::getPhotoId).toList();
         photoRepository.linkAnalysis(saved.getAnalysisId(), photoIds);
 
-        return AnalyzeResponse.of(saved.getAnalysisId(), aiResponse.getFeatures());
+        return AnalyzeResponse.of(saved.getAnalysisId(), aiResponse.getFeatures(), user.getCurrentStreak());
     }
 
-    /** 오늘 이미 분석한 결과만 조회한다 (새로 분석하지 않음). 화면 재진입 시 사용. */
+    @Transactional(readOnly = true)
     public AnalyzeResponse getTodayAnalysis(UUID userId) {
         AnalysisResult result = analysisResultRepository
                 .findByUser_UserIdAndAnalysisDate(userId, LocalDate.now())
@@ -97,7 +90,7 @@ public class AnalysisService {
     private AnalyzeResponse toResponse(AnalysisResult result) {
         try {
             FeaturesDto features = objectMapper.readValue(result.getFeaturesJson(), FeaturesDto.class);
-            return AnalyzeResponse.of(result.getAnalysisId(), features);
+            return AnalyzeResponse.of(result.getAnalysisId(), features, result.getUser().getCurrentStreak());
         } catch (JsonProcessingException e) {
             log.error("features 역직렬화 실패", e);
             throw new AnalysisException(AnalysisErrorCode.FEATURE_SERIALIZE_FAILED);
