@@ -39,6 +39,7 @@ application-local.yml
 
 
 .env
+docs/local-dev-setup.md
 
 ### macOS ###
 .DS_Store
