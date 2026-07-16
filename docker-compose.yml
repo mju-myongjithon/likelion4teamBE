@@ -15,6 +15,12 @@ services:
       - .env
     restart: unless-stopped
 
+  frontend:
+    # 서버에 likelion4teamBE와 likelion4teamFE가 형제 디렉터리로 clone돼 있다고 가정.
+    # 실제 서버 디렉터리 구조가 다르면 이 경로만 맞게 수정하면 된다.
+    build: ../likelion4teamFE
+    restart: unless-stopped
+
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
@@ -27,6 +33,7 @@ services:
       - caddy_config:/config
     depends_on:
       - app
+      - frontend
 
 volumes:
   caddy_data:
