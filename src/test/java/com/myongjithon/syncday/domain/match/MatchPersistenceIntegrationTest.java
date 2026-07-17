@@ -17,7 +17,6 @@ import org.springframework.test.context.TestPropertySource;
 
 import java.time.LocalDate;
 import java.util.List;
-import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -119,12 +118,12 @@ class MatchPersistenceIntegrationTest {
         Match saved = matchRepository.saveAndFlush(Match.create(a, b, TODAY, 80, "{\"totalScore\":80}"));
         em.clear();
 
-        Optional<Match> byA = matchRepository.findByDateAndParticipant(TODAY, a.getUserId());
-        Optional<Match> byB = matchRepository.findByDateAndParticipant(TODAY, b.getUserId());
+        List<Match> byA = matchRepository.findByDateAndParticipant(TODAY, a.getUserId());
+        List<Match> byB = matchRepository.findByDateAndParticipant(TODAY, b.getUserId());
 
-        assertThat(byA).isPresent().get().extracting(Match::getMatchId).isEqualTo(saved.getMatchId());
-        assertThat(byB).isPresent().get().extracting(Match::getMatchId).isEqualTo(saved.getMatchId());
-        assertThat(byA.get().getScoreBreakdown()).contains("totalScore");
+        assertThat(byA).singleElement().extracting(Match::getMatchId).isEqualTo(saved.getMatchId());
+        assertThat(byB).singleElement().extracting(Match::getMatchId).isEqualTo(saved.getMatchId());
+        assertThat(byA.get(0).getScoreBreakdown()).contains("totalScore");
     }
 
     // ---- helpers ----
