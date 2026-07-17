@@ -1,5 +1,6 @@
 package com.myongjithon.syncday.domain.chat;
 
+import com.myongjithon.syncday.domain.demo.SeedAccountRepository;
 import com.myongjithon.syncday.domain.match.Match;
 import com.myongjithon.syncday.domain.match.MatchRepository;
 import com.myongjithon.syncday.global.exception.MatchException;
@@ -24,6 +25,8 @@ class ChatServiceTest {
 
     @Mock private MatchRepository matchRepository;
     @Mock private ChatMessageRepository chatMessageRepository;
+    @Mock private SeedAccountRepository seedAccountRepository;
+    @Mock private SeedAutoResponder seedAutoResponder;
 
     private ChatService chatService;
 
@@ -34,7 +37,8 @@ class ChatServiceTest {
 
     @BeforeEach
     void setUp() {
-        chatService = new ChatService(matchRepository, chatMessageRepository);
+        chatService = new ChatService(
+                matchRepository, chatMessageRepository, seedAccountRepository, seedAutoResponder);
     }
 
     private Match mockMatch(boolean connected) {
@@ -79,6 +83,7 @@ class ChatServiceTest {
     void sendMessageWhenConnected() {
         Match match = mockMatch(true);
         when(matchRepository.findById(matchId)).thenReturn(Optional.of(match));
+        when(seedAccountRepository.existsById(any())).thenReturn(false);
         ChatMessage message = ChatMessage.of(match, userA, "안녕하세요");
         when(chatMessageRepository.save(any())).thenReturn(message);
 
@@ -87,6 +92,7 @@ class ChatServiceTest {
         assertThat(response.mine()).isTrue();
         assertThat(response.content()).isEqualTo("안녕하세요");
         verify(chatMessageRepository).save(any());
+        verify(seedAutoResponder, never()).replyLater(any(), any());
     }
 
     @Test
@@ -119,5 +125,33 @@ class ChatServiceTest {
 
         assertThat(chatService.getMessages(matchId, userA, null).get(0).mine()).isTrue();
         assertThat(chatService.getMessages(matchId, userB, null).get(0).mine()).isFalse();
+    }
+
+    @Test
+    @DisplayName("상대가 시드 계정이면 첫 메시지에 자동 응답이 트리거된다")
+    void triggersSeedReplyOnFirstMessage() {
+        Match match = mockMatch(true);
+        when(matchRepository.findById(matchId)).thenReturn(Optional.of(match));
+        when(chatMessageRepository.save(any())).thenReturn(ChatMessage.of(match, userA, "안녕하세요"));
+        when(seedAccountRepository.existsById(userB)).thenReturn(true);
+        when(chatMessageRepository.existsByMatch_MatchIdAndSenderId(matchId, userB)).thenReturn(false);
+
+        chatService.sendMessage(matchId, userA, "안녕하세요");
+
+        verify(seedAutoResponder).replyLater(matchId, userB);
+    }
+
+    @Test
+    @DisplayName("시드가 이미 답장한 매칭에서는 자동 응답이 다시 트리거되지 않는다 (1회 한정)")
+    void doesNotTriggerSeedReplyTwice() {
+        Match match = mockMatch(true);
+        when(matchRepository.findById(matchId)).thenReturn(Optional.of(match));
+        when(chatMessageRepository.save(any())).thenReturn(ChatMessage.of(match, userA, "또 보내요"));
+        when(seedAccountRepository.existsById(userB)).thenReturn(true);
+        when(chatMessageRepository.existsByMatch_MatchIdAndSenderId(matchId, userB)).thenReturn(true);
+
+        chatService.sendMessage(matchId, userA, "또 보내요");
+
+        verify(seedAutoResponder, never()).replyLater(any(), any());
     }
 }

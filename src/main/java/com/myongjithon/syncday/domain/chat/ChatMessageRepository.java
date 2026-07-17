@@ -9,4 +9,6 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, Long> 
 
     List<ChatMessage> findByMatch_MatchIdAndMessageIdGreaterThanOrderByMessageIdAsc(
             UUID matchId, Long afterId);
+
+    boolean existsByMatch_MatchIdAndSenderId(UUID matchId, UUID senderId);
 }
