@@ -8,6 +8,7 @@ public enum PhotoErrorCode {
 
     PHOTO_COUNT_INSUFFICIENT(HttpStatus.BAD_REQUEST, "최소 3장 이상 업로드해야 합니다."),
     PHOTO_COUNT_EXCEEDED(HttpStatus.BAD_REQUEST, "오늘 업로드 가능한 사진은 최대 10장입니다."),
+    ALREADY_ANALYZED_TODAY(HttpStatus.CONFLICT, "오늘은 이미 분석을 완료해서 더 이상 사진을 업로드할 수 없습니다."),
     INVALID_IMAGE_FORMAT(HttpStatus.BAD_REQUEST, "지원하지 않는 이미지 형식입니다."),
     USER_NOT_FOUND(HttpStatus.NOT_FOUND, "존재하지 않는 사용자입니다."),
     IMAGE_PROCESSING_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "이미지 처리 중 오류가 발생했습니다."),
