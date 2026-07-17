@@ -477,6 +477,54 @@ class MatchServiceTest {
         assertThat(match.isConnected()).isTrue();
     }
 
+    @Test
+    @DisplayName("게이트2: 양쪽 수락으로 연결되면 F6 아이스브레이킹 질문을 생성해 저장·공개한다")
+    void chatConnectGeneratesIcebreaker() {
+        UUID userId = UUID.randomUUID();
+        AppUser viewer = user(userId, Campus.HUMANITIES, "나");
+        AppUser partner = user(UUID.randomUUID(), Campus.NATURAL, "상대");
+        Match match = Match.create(viewer, partner, TODAY, 88, "{}");
+        match.applyChatDecision(partner.getUserId(), Gate2Decision.ACCEPTED); // 상대는 이미 수락
+
+        when(matchRepository.findByDateAndParticipant(TODAY, userId)).thenReturn(Optional.of(match));
+        AnalysisResult anyAnalysis = analysis(UUID.randomUUID(), Campus.HUMANITIES, "누구",
+                featuresJson("카페", "오후", "산책", "여유로움", "초록 계열"));
+        when(analysisResultRepository.findByUser_UserIdAndAnalysisDate(any(), eq(TODAY)))
+                .thenReturn(Optional.of(anyAnalysis));
+        when(aiServiceClient.generateIcebreaker(any(), any()))
+                .thenReturn("두 분 다 카페에 가셨네요! 뭐 드셨나요?");
+
+        MatchResultResponse result = matchService.applyChatDecision(userId, TODAY, Gate2Decision.ACCEPTED);
+
+        assertThat(result.status()).isEqualTo(MatchStatus.CONNECTED);
+        assertThat(result.match().icebreakerQuestion()).isEqualTo("두 분 다 카페에 가셨네요! 뭐 드셨나요?");
+        assertThat(match.getIcebreakerQuestion()).isEqualTo("두 분 다 카페에 가셨네요! 뭐 드셨나요?");
+    }
+
+    @Test
+    @DisplayName("게이트2: 아이스브레이킹 질문 생성이 실패해도 매칭은 CONNECTED로 성사된다(질문만 null)")
+    void chatConnectSurvivesIcebreakerFailure() {
+        UUID userId = UUID.randomUUID();
+        AppUser viewer = user(userId, Campus.HUMANITIES, "나");
+        AppUser partner = user(UUID.randomUUID(), Campus.NATURAL, "상대");
+        Match match = Match.create(viewer, partner, TODAY, 88, "{}");
+        match.applyChatDecision(partner.getUserId(), Gate2Decision.ACCEPTED);
+
+        when(matchRepository.findByDateAndParticipant(TODAY, userId)).thenReturn(Optional.of(match));
+        AnalysisResult anyAnalysis = analysis(UUID.randomUUID(), Campus.HUMANITIES, "누구",
+                featuresJson("카페", "오후", "산책", "여유로움", "초록 계열"));
+        when(analysisResultRepository.findByUser_UserIdAndAnalysisDate(any(), eq(TODAY)))
+                .thenReturn(Optional.of(anyAnalysis));
+        when(aiServiceClient.generateIcebreaker(any(), any()))
+                .thenThrow(new RuntimeException("gemini down"));
+
+        MatchResultResponse result = matchService.applyChatDecision(userId, TODAY, Gate2Decision.ACCEPTED);
+
+        assertThat(result.status()).isEqualTo(MatchStatus.CONNECTED);
+        assertThat(result.match().icebreakerQuestion()).isNull();
+        assertThat(match.isConnected()).isTrue();
+    }
+
     // ---- helpers ----
 
     /** ai-service 가 반환하는 features 를 그대로 직렬화한 JSON. 차원마다 값 하나씩만 둔다. */

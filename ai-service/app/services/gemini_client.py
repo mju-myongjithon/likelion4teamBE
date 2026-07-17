@@ -176,6 +176,9 @@ def generate_description(user_a: DayFeatures, user_b: DayFeatures, score: float)
         config=types.GenerateContentConfig(
             system_instruction=DESCRIPTION_SYSTEM_PROMPT,
             temperature=0.7,
+            # 짧은 문장 생성이라 추론(thinking)이 불필요 — 꺼두면 지연시간이 크게 줄어든다
+            # (실측: 평균 6.4s -> 1.0s, gemini-2.5-flash 기준).
+            thinking_config=types.ThinkingConfig(thinking_budget=0),
         ),
     )
     return _strip_markdown(response.text)
@@ -195,6 +198,7 @@ def generate_icebreaker(user_a: DayFeatures, user_b: DayFeatures) -> str:
         config=types.GenerateContentConfig(
             system_instruction=ICEBREAKER_SYSTEM_PROMPT,
             temperature=0.8,
+            thinking_config=types.ThinkingConfig(thinking_budget=0),
         ),
     )
     return _strip_markdown(response.text)
