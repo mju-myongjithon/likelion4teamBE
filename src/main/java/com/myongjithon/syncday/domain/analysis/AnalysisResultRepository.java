@@ -11,6 +11,9 @@ import java.util.UUID;
 public interface AnalysisResultRepository extends JpaRepository<AnalysisResult, UUID> {
     Optional<AnalysisResult> findByUser_UserIdAndAnalysisDate(UUID userId, LocalDate analysisDate);
 
+    /** 오늘 이미 분석을 완료했는지 — 재업로드 차단(F1)에 쓰인다. */
+    boolean existsByUser_UserIdAndAnalysisDate(UUID userId, LocalDate analysisDate);
+
     /**
      * F3 매칭 후보군: 같은 날짜의 반대 캠퍼스 유저 중 <b>매칭을 수락(opt-in)한</b> 유저의 분석만.
      * campus 파라미터에 대상 유저의 캠퍼스를 넣으면 본인·같은 캠퍼스는 자동 제외되고,

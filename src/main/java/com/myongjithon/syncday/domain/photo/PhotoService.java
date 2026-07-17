@@ -1,5 +1,6 @@
 package com.myongjithon.syncday.domain.photo;
 
+import com.myongjithon.syncday.domain.analysis.AnalysisResultRepository;
 import com.myongjithon.syncday.domain.photo.dto.PhotoStatusResponse;
 import com.myongjithon.syncday.domain.photo.dto.PhotoUploadResponse;
 import com.myongjithon.syncday.domain.user.AppUser;
@@ -43,6 +44,7 @@ public class PhotoService {
 
     private final PhotoRepository photoRepository;
     private final AppUserRepository appUserRepository;
+    private final AnalysisResultRepository analysisResultRepository;
     private final S3Client s3Client;
     private final RekognitionClient rekognitionClient;
     private final S3Presigner s3Presigner;
@@ -56,6 +58,14 @@ public class PhotoService {
 
         AppUser user = appUserRepository.findById(userId)
                 .orElseThrow(() -> new PhotoUploadException(PhotoErrorCode.USER_NOT_FOUND));
+
+        // 오늘 이미 분석(F2)까지 끝냈다면 더 이상 업로드를 받지 않는다. 재분석은 기존 결과를
+        // 그대로 돌려줄 뿐이라(AnalysisService.analyzeToday), 이 시점 이후의 업로드는 새로 올린
+        // 사진이 어디에도 반영되지 않는 채로 프라이버시 모드면 Rekognition 비용만 또 나가는
+        // 조용한 무의미 재시도가 된다 — 그래서 아예 업로드 단계에서 막는다.
+        if (analysisResultRepository.existsByUser_UserIdAndAnalysisDate(userId, LocalDate.now())) {
+            throw new PhotoUploadException(PhotoErrorCode.ALREADY_ANALYZED_TODAY);
+        }
 
         TodayRange today = getTodayRange();
         int todayCount = photoRepository.countByUser_UserIdAndUploadedAtBetween(userId, today.start(), today.end());
