@@ -15,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.rekognition.RekognitionClient;
+import software.amazon.awssdk.services.rekognition.model.RekognitionException;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
@@ -150,6 +151,11 @@ public class PhotoService {
             contentType = "image/jpeg";
 
         } catch (IOException e) {
+            throw new PhotoUploadException(PhotoErrorCode.IMAGE_PROCESSING_FAILED);
+        } catch (RekognitionException e) {
+            // 리사이즈 전 원본을 그대로 Rekognition에 보내다 보니, 5MB 제한을 넘는
+            // 고해상도 원본에서 종종 터진다(InvalidImageFormatException 등). 잡지 않으면
+            // 처리되지 않은 500으로 그대로 나가버려서 여기서 도메인 예외로 변환한다.
             throw new PhotoUploadException(PhotoErrorCode.IMAGE_PROCESSING_FAILED);
         }
 
