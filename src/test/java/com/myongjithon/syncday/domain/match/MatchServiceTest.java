@@ -79,7 +79,7 @@ class MatchServiceTest {
 
         when(analysisResultRepository.findByUser_UserIdAndAnalysisDate(targetId, TODAY))
                 .thenReturn(Optional.of(target));
-        when(matchRepository.findByDateAndParticipant(TODAY, targetId)).thenReturn(Optional.empty());
+        when(matchRepository.findByDateAndParticipant(TODAY, targetId)).thenReturn(List.of());
         when(matchRepository.findByDate(TODAY)).thenReturn(List.of());
         when(analysisResultRepository.findByAnalysisDateAndUser_CampusNotAndMatchDecision(TODAY, Campus.HUMANITIES, MatchDecision.ACCEPTED))
                 .thenReturn(List.of(low, high));
@@ -111,7 +111,7 @@ class MatchServiceTest {
 
         when(analysisResultRepository.findByUser_UserIdAndAnalysisDate(targetId, TODAY))
                 .thenReturn(Optional.of(target));
-        when(matchRepository.findByDateAndParticipant(TODAY, targetId)).thenReturn(Optional.empty());
+        when(matchRepository.findByDateAndParticipant(TODAY, targetId)).thenReturn(List.of());
         when(matchRepository.findByDate(TODAY)).thenReturn(List.of());
         when(analysisResultRepository.findByAnalysisDateAndUser_CampusNotAndMatchDecision(TODAY, Campus.HUMANITIES, MatchDecision.ACCEPTED))
                 .thenReturn(List.of(partner));
@@ -148,7 +148,7 @@ class MatchServiceTest {
         when(analysisResultRepository.findByUser_UserIdAndAnalysisDate(targetId, TODAY))
                 .thenReturn(Optional.of(target));
         when(matchRepository.findByDateAndParticipant(TODAY, targetId))
-                .thenReturn(Optional.of(existing));
+                .thenReturn(List.of(existing));
 
         MatchResultResponse result = matchService.createMatchForUser(targetId, TODAY);
 
@@ -158,6 +158,42 @@ class MatchServiceTest {
         assertThat(response.similarityScore()).isNull();            // 아직 CONNECTED 전이라 점수는 가림
         verify(matchRepository, never()).saveAndFlush(any());
         verify(analysisResultRepository, never()).findByAnalysisDateAndUser_CampusNotAndMatchDecision(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("채팅방이 열리기 전에 종료(ENDED)된 매칭은 막지 않고 새 후보를 찾아 다시 매칭한다")
+    void endedMatchDoesNotBlockRematch() {
+        UUID targetId = UUID.randomUUID();
+        AnalysisResult target = analysis(targetId, Campus.HUMANITIES, "타깃",
+                featuresJson("카페", "오후", "공부", "차분함", "파란 계열"));
+        AppUser targetUser = target.getUser();
+
+        // 예전 상대와는 채팅방이 열리기 전에(게이트2에서) 종료됨 — features가 타깃과 동일해
+        // 유사도 100점이라, 후보에서 제외되지 않으면 무조건 다시 뽑히게 만들어 검증한다.
+        AppUser oldPartner = user(UUID.randomUUID(), Campus.NATURAL, "예전상대");
+        Match ended = Match.create(targetUser, oldPartner, TODAY, 72, "{}");
+        ended.applyChatDecision(targetId, Gate2Decision.REJECTED);
+        AnalysisResult oldPartnerAnalysis = analysis(oldPartner.getUserId(), Campus.NATURAL, "예전상대",
+                featuresJson("카페", "오후", "공부", "차분함", "파란 계열"));
+
+        AnalysisResult newPartner = analysis(UUID.randomUUID(), Campus.NATURAL, "새상대",
+                featuresJson("체육시설", "밤", "운동", "활기참", "주황 계열"));
+
+        when(analysisResultRepository.findByUser_UserIdAndAnalysisDate(targetId, TODAY))
+                .thenReturn(Optional.of(target));
+        when(matchRepository.findByDateAndParticipant(TODAY, targetId)).thenReturn(List.of(ended));
+        when(matchRepository.findByDate(TODAY)).thenReturn(List.of(ended));
+        when(analysisResultRepository.findByAnalysisDateAndUser_CampusNotAndMatchDecision(TODAY, Campus.HUMANITIES, MatchDecision.ACCEPTED))
+                .thenReturn(List.of(oldPartnerAnalysis, newPartner));
+        when(matchRepository.saveAndFlush(any(Match.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        MatchResultResponse result = matchService.createMatchForUser(targetId, TODAY);
+
+        assertThat(result.status()).isEqualTo(MatchStatus.MATCHED);
+        // 유사도만 보면 예전 상대(100점)가 이겨야 하지만, 오늘 이미 종료된 사이라 후보에서 제외되고
+        // 새 상대와 매칭돼야 한다 — (user_a, user_b, date) unique 제약 위반도 자연히 방지된다.
+        assertThat(result.match().partnerNickname()).isEqualTo("새상대");
+        verify(matchRepository).saveAndFlush(any(Match.class));
     }
 
     @Test
@@ -181,7 +217,7 @@ class MatchServiceTest {
 
         when(analysisResultRepository.findByUser_UserIdAndAnalysisDate(targetId, TODAY))
                 .thenReturn(Optional.of(target));
-        when(matchRepository.findByDateAndParticipant(TODAY, targetId)).thenReturn(Optional.empty());
+        when(matchRepository.findByDateAndParticipant(TODAY, targetId)).thenReturn(List.of());
         when(matchRepository.findByDate(TODAY)).thenReturn(List.of());
         when(analysisResultRepository.findByAnalysisDateAndUser_CampusNotAndMatchDecision(TODAY, Campus.HUMANITIES, MatchDecision.ACCEPTED))
                 .thenReturn(List.of());
@@ -198,7 +234,7 @@ class MatchServiceTest {
     void getMatchReturnsNotRequestedWhenUndecided() {
         UUID userId = UUID.randomUUID();
         AnalysisResult analysis = analysisWithDecision(MatchDecision.NONE);
-        when(matchRepository.findByDateAndParticipant(TODAY, userId)).thenReturn(Optional.empty());
+        when(matchRepository.findByDateAndParticipant(TODAY, userId)).thenReturn(List.of());
         when(analysisResultRepository.findByUser_UserIdAndAnalysisDate(userId, TODAY))
                 .thenReturn(Optional.of(analysis));
 
@@ -213,7 +249,7 @@ class MatchServiceTest {
     void getMatchReturnsPendingWhenAccepted() {
         UUID userId = UUID.randomUUID();
         AnalysisResult analysis = analysisWithDecision(MatchDecision.ACCEPTED);
-        when(matchRepository.findByDateAndParticipant(TODAY, userId)).thenReturn(Optional.empty());
+        when(matchRepository.findByDateAndParticipant(TODAY, userId)).thenReturn(List.of());
         when(analysisResultRepository.findByUser_UserIdAndAnalysisDate(userId, TODAY))
                 .thenReturn(Optional.of(analysis));
 
@@ -228,7 +264,7 @@ class MatchServiceTest {
     void getMatchReturnsDeclinedWhenDeclined() {
         UUID userId = UUID.randomUUID();
         AnalysisResult analysis = analysisWithDecision(MatchDecision.DECLINED);
-        when(matchRepository.findByDateAndParticipant(TODAY, userId)).thenReturn(Optional.empty());
+        when(matchRepository.findByDateAndParticipant(TODAY, userId)).thenReturn(List.of());
         when(analysisResultRepository.findByUser_UserIdAndAnalysisDate(userId, TODAY))
                 .thenReturn(Optional.of(analysis));
 
@@ -242,7 +278,7 @@ class MatchServiceTest {
     @DisplayName("getMatch: 분석 기록조차 없으면 NOT_REQUESTED")
     void getMatchReturnsNotRequestedWhenNoAnalysis() {
         UUID userId = UUID.randomUUID();
-        when(matchRepository.findByDateAndParticipant(TODAY, userId)).thenReturn(Optional.empty());
+        when(matchRepository.findByDateAndParticipant(TODAY, userId)).thenReturn(List.of());
         when(analysisResultRepository.findByUser_UserIdAndAnalysisDate(userId, TODAY))
                 .thenReturn(Optional.empty());
 
@@ -259,7 +295,7 @@ class MatchServiceTest {
                 featuresJson("카페", "오후", "공부", "차분함", "파란 계열"));
         when(analysisResultRepository.findByUser_UserIdAndAnalysisDate(userId, TODAY))
                 .thenReturn(Optional.of(target));
-        when(matchRepository.findByDateAndParticipant(TODAY, userId)).thenReturn(Optional.empty());
+        when(matchRepository.findByDateAndParticipant(TODAY, userId)).thenReturn(List.of());
 
         MatchResultResponse result = matchService.declineMatch(userId, TODAY);
 
@@ -277,7 +313,7 @@ class MatchServiceTest {
         Match existing = Match.create(target.getUser(), partner, TODAY, 90, "{}");
         when(analysisResultRepository.findByUser_UserIdAndAnalysisDate(userId, TODAY))
                 .thenReturn(Optional.of(target));
-        when(matchRepository.findByDateAndParticipant(TODAY, userId)).thenReturn(Optional.of(existing));
+        when(matchRepository.findByDateAndParticipant(TODAY, userId)).thenReturn(List.of(existing));
 
         MatchResultResponse result = matchService.declineMatch(userId, TODAY);
 
@@ -293,7 +329,7 @@ class MatchServiceTest {
         AppUser partner = user(UUID.randomUUID(), Campus.NATURAL, "상대");
         Match existing = Match.create(viewer, partner, TODAY, 88, "{}");
 
-        when(matchRepository.findByDateAndParticipant(TODAY, userId)).thenReturn(Optional.of(existing));
+        when(matchRepository.findByDateAndParticipant(TODAY, userId)).thenReturn(List.of(existing));
 
         MatchResultResponse result = matchService.getMatch(userId, TODAY);
 
@@ -312,7 +348,7 @@ class MatchServiceTest {
 
         when(analysisResultRepository.findByUser_UserIdAndAnalysisDate(targetId, TODAY))
                 .thenReturn(Optional.of(target));
-        when(matchRepository.findByDateAndParticipant(TODAY, targetId)).thenReturn(Optional.empty());
+        when(matchRepository.findByDateAndParticipant(TODAY, targetId)).thenReturn(List.of());
         when(matchRepository.findByDate(TODAY)).thenReturn(List.of());
         when(analysisResultRepository.findByAnalysisDateAndUser_CampusNotAndMatchDecision(TODAY, Campus.HUMANITIES, MatchDecision.ACCEPTED))
                 .thenReturn(List.of(candidate));
@@ -329,7 +365,7 @@ class MatchServiceTest {
         AppUser viewer = user(userId, Campus.HUMANITIES, "나");
         AppUser partner = user(UUID.randomUUID(), Campus.NATURAL, "상대");
         Match match = Match.create(viewer, partner, TODAY, 88, "{\"totalScore\":88}");
-        when(matchRepository.findByDateAndParticipant(TODAY, userId)).thenReturn(Optional.of(match));
+        when(matchRepository.findByDateAndParticipant(TODAY, userId)).thenReturn(List.of(match));
 
         MatchResultResponse result = matchService.applyChatDecision(userId, TODAY, Gate2Decision.ACCEPTED);
 
@@ -347,7 +383,7 @@ class MatchServiceTest {
         AppUser partner = user(UUID.randomUUID(), Campus.NATURAL, "상대");
         Match match = Match.create(viewer, partner, TODAY, 88, "{\"totalScore\":88}");
         match.applyChatDecision(partner.getUserId(), Gate2Decision.ACCEPTED); // 상대는 이미 수락한 상태
-        when(matchRepository.findByDateAndParticipant(TODAY, userId)).thenReturn(Optional.of(match));
+        when(matchRepository.findByDateAndParticipant(TODAY, userId)).thenReturn(List.of(match));
 
         MatchResultResponse result = matchService.applyChatDecision(userId, TODAY, Gate2Decision.ACCEPTED);
 
@@ -366,7 +402,7 @@ class MatchServiceTest {
         AppUser viewer = user(userId, Campus.HUMANITIES, "나");
         AppUser partner = user(UUID.randomUUID(), Campus.NATURAL, "상대");
         Match match = Match.create(viewer, partner, TODAY, 88, "{}");
-        when(matchRepository.findByDateAndParticipant(TODAY, userId)).thenReturn(Optional.of(match));
+        when(matchRepository.findByDateAndParticipant(TODAY, userId)).thenReturn(List.of(match));
 
         MatchResultResponse result = matchService.applyChatDecision(userId, TODAY, Gate2Decision.REJECTED);
 
@@ -383,7 +419,7 @@ class MatchServiceTest {
         Match match = Match.create(viewer, partner, TODAY, 88, "{}");
         match.applyChatDecision(partner.getUserId(), Gate2Decision.ACCEPTED);
         match.applyChatDecision(userId, Gate2Decision.ACCEPTED); // 이미 연결됨
-        when(matchRepository.findByDateAndParticipant(TODAY, userId)).thenReturn(Optional.of(match));
+        when(matchRepository.findByDateAndParticipant(TODAY, userId)).thenReturn(List.of(match));
 
         MatchResultResponse result = matchService.applyChatDecision(userId, TODAY, Gate2Decision.REJECTED);
 
@@ -395,7 +431,7 @@ class MatchServiceTest {
     @DisplayName("게이트2: 성사된 매칭이 없으면 MATCH_NOT_FOUND")
     void chatWithoutMatchThrows() {
         UUID userId = UUID.randomUUID();
-        when(matchRepository.findByDateAndParticipant(TODAY, userId)).thenReturn(Optional.empty());
+        when(matchRepository.findByDateAndParticipant(TODAY, userId)).thenReturn(List.of());
 
         assertThatThrownBy(() -> matchService.applyChatDecision(userId, TODAY, Gate2Decision.ACCEPTED))
                 .isInstanceOf(MatchException.class)
@@ -411,7 +447,7 @@ class MatchServiceTest {
         AppUser partner = user(partnerId, Campus.NATURAL, "상대");
         Match match = Match.create(viewer, partner, TODAY, 80, "{}");
 
-        when(matchRepository.findByDateAndParticipant(TODAY, userId)).thenReturn(Optional.of(match));
+        when(matchRepository.findByDateAndParticipant(TODAY, userId)).thenReturn(List.of(match));
         when(photoService.getTodayPhotoUrls(partnerId))
                 .thenReturn(List.of("https://s3/p1.jpg", "https://s3/p2.jpg"));
         AnalysisResult partnerAnalysis = analysis(partnerId, Campus.NATURAL, "상대",
@@ -437,7 +473,7 @@ class MatchServiceTest {
         Match match = Match.create(viewer, partner, TODAY, 88, "{}");
         match.applyChatDecision(partner.getUserId(), Gate2Decision.ACCEPTED); // 상대는 이미 수락
 
-        when(matchRepository.findByDateAndParticipant(TODAY, userId)).thenReturn(Optional.of(match));
+        when(matchRepository.findByDateAndParticipant(TODAY, userId)).thenReturn(List.of(match));
         // featuresDtoOf: 두 유저 분석 조회(어느 id로 오든 동일 features 반환)
         AnalysisResult anyAnalysis = analysis(UUID.randomUUID(), Campus.HUMANITIES, "누구",
                 featuresJson("카페", "오후", "산책", "여유로움", "초록 계열"));
@@ -462,7 +498,7 @@ class MatchServiceTest {
         Match match = Match.create(viewer, partner, TODAY, 88, "{}");
         match.applyChatDecision(partner.getUserId(), Gate2Decision.ACCEPTED);
 
-        when(matchRepository.findByDateAndParticipant(TODAY, userId)).thenReturn(Optional.of(match));
+        when(matchRepository.findByDateAndParticipant(TODAY, userId)).thenReturn(List.of(match));
         AnalysisResult anyAnalysis = analysis(UUID.randomUUID(), Campus.HUMANITIES, "누구",
                 featuresJson("카페", "오후", "산책", "여유로움", "초록 계열"));
         when(analysisResultRepository.findByUser_UserIdAndAnalysisDate(any(), eq(TODAY)))
@@ -486,7 +522,7 @@ class MatchServiceTest {
         Match match = Match.create(viewer, partner, TODAY, 88, "{}");
         match.applyChatDecision(partner.getUserId(), Gate2Decision.ACCEPTED); // 상대는 이미 수락
 
-        when(matchRepository.findByDateAndParticipant(TODAY, userId)).thenReturn(Optional.of(match));
+        when(matchRepository.findByDateAndParticipant(TODAY, userId)).thenReturn(List.of(match));
         AnalysisResult anyAnalysis = analysis(UUID.randomUUID(), Campus.HUMANITIES, "누구",
                 featuresJson("카페", "오후", "산책", "여유로움", "초록 계열"));
         when(analysisResultRepository.findByUser_UserIdAndAnalysisDate(any(), eq(TODAY)))
@@ -510,7 +546,7 @@ class MatchServiceTest {
         Match match = Match.create(viewer, partner, TODAY, 88, "{}");
         match.applyChatDecision(partner.getUserId(), Gate2Decision.ACCEPTED);
 
-        when(matchRepository.findByDateAndParticipant(TODAY, userId)).thenReturn(Optional.of(match));
+        when(matchRepository.findByDateAndParticipant(TODAY, userId)).thenReturn(List.of(match));
         AnalysisResult anyAnalysis = analysis(UUID.randomUUID(), Campus.HUMANITIES, "누구",
                 featuresJson("카페", "오후", "산책", "여유로움", "초록 계열"));
         when(analysisResultRepository.findByUser_UserIdAndAnalysisDate(any(), eq(TODAY)))
