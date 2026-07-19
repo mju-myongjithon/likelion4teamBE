@@ -4,6 +4,8 @@
 
 명지톤 2026 | 인문캠 x 자연캠 연합 해커톤 | 🦁 멋쟁이사조 4조
 
+[Syncday_발표자료.pdf](https://github.com/user-attachments/files/30163232/Syncday_.pdf)
+
 ---
 
 ## 소개
