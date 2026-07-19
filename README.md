@@ -77,8 +77,6 @@
 핵심 플로우(F1 → F2 → F3 → F4 → F5)는 데모 당일 기준 end-to-end로 정상 동작을 확인했습니다. 
 
 ---
-<img width="545" height="261" alt="스크린샷 2026-07-19 18 18 47" src="https://github.com/user-attachments/assets/acf57895-566f-4445-9912-27ac1f78a2f4" />
-
 ## 로컬 실행
 
 ```bash
