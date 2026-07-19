@@ -1,8 +1,8 @@
 # Sync.day
+<img width="545" height="261" alt="스크린샷 2026-07-19 18 19 00" src="https://github.com/user-attachments/assets/9a68315d-75c7-4741-b281-7a4060f1b238" />
 
-> AI가 찾아주는, 오늘 나와 가장 닮은 하루
 
-명지톤 2026 | 인문캠 x 자연캠 연합 해커톤 | 🦁 멋쟁이 4조
+명지톤 2026 | 인문캠 x 자연캠 연합 해커톤 | 🦁 멋쟁이사조 4조
 
 ---
 
@@ -18,12 +18,13 @@
 
 ## 서비스 흐름
 
-1. **사진 업로드**: 오늘 하루 중 찍은 사진 최소 3장 업로드 (프라이버시 모드 기본 ON, 얼굴만 자동 모자이크)
-2. **오늘의 나를 분석하기**: AI가 사진들을 분석해 하루의 특징을 요약
-3. **매칭 참여 의사 확인**: 반대 캠퍼스 학생과의 매칭에 참여할지 선택 (opt-in)
-4. **매칭 대기**: 참여 의사를 밝힌 후, 유사도가 가장 높은 상대가 정해질 때까지 대기
-5. **매칭 발견**: 상대의 닉네임·캠퍼스와 오늘 찍은 사진(얼굴 모자이크 처리됨)을 먼저 보여주고, 대화를 시작할지 선택
-6. **양방향 수락 시 전체 공개**: 양쪽 모두 대화를 수락하면 유사도(%)와 AI가 만든 한 줄 설명이 공개되고 채팅이 열림
+1. **온보딩**: 닉네임 + 캠퍼스 선택 (회원가입 없이 UUID 발급) 
+2. **사진 업로드**: 오늘 하루 중 찍은 사진 최소 3장 업로드 (프라이버시 모드 기본 ON, 얼굴만 자동 모자이크 · AWS Rekognition)
+3. **오늘의 나를 분석하기**: Gemini Vision이 사진들을 분석해 하루의 특징을 추출·요약
+4. **게이트 1 — 매칭 참여 의사 확인**: 반대 캠퍼스 학생과의 매칭에 참여할지 선택 (opt-in), 참여 시 유사도 최상위 상대와 자동 매칭
+5. **게이트 2 — 상대 공개 및 채팅 수락**: 매칭된 상대의 닉네임·캠퍼스·오늘 사진(모자이크 처리)을 먼저 보여주고, 대화를 시작할지 양쪽이 각자 선택
+6. **연결 완료**: 양쪽 모두 수락하면 유사도(%)·AI가 생성한 한 줄 코멘트가 공개되고 채팅이 열림
+7. **스트릭**: 연속으로 분석에 참여한 일수를 기록
 
 ---
 
@@ -31,14 +32,17 @@
 
 | 영역 | 기술 |
 |---|---|
-| Frontend | React |
-| Backend | Spring Boot (Spring Data JPA) |
+| Frontend | React Native |
+| Backend | Spring Boot 3.5 (Java 21, Spring Data JPA) |
+| AI Service | Python FastAPI (독립 컨테이너, BE와 REST로 통신) |
 | Database | PostgreSQL |
-| Infra | AWS Lightsail, Caddy (HTTPS), syncday.site |
-| 이미지 저장 | AWS S3 |
+| Infra | AWS Lightsail (Ubuntu 24.04), Docker Compose, Caddy (자동 HTTPS) |
+| 이미지 저장 | AWS S3 (`userId/randomUUID.ext` 키 구조) |
 | 얼굴 감지/모자이크 | AWS Rekognition |
-| AI 이미지 분석 | Gemini Vision (ai-service) |
-| AI 텍스트 생성 | Gemini (ai-service) |
+| AI 이미지 분석 · 설명 생성 | Gemini 2.5 Flash |
+
+### 아키텍처
+<img width="1335" height="756" alt="스크린샷 2026-07-19 18 16 17" src="https://github.com/user-attachments/assets/17a05e20-4108-45e3-bc8b-53fb49364267" />
 
 ---
 
@@ -46,77 +50,66 @@
 
 | 담당 | 이름 | 기능 |
 |---|---|---|
-| BE | 박찬 | F1 — 사진 업로드, S3 저장, 얼굴 모자이크, 인프라 |
-| BE | 김재현 | F3 — 유사도 매칭 로직, PostgreSQL 쿼리 |
-| BE | 윤채영 | F5 (+ 여유되면 F7) — 매칭 발견·양방향 공개, 채팅 |
-| AI | 강지원 | F2 + F4 (+ 여유되면 F6) — 특징 추출, 설명 생성 |
-| FE | 박지훈 | 업로드 화면 ~ 결과 카드까지 전체 화면 |
+| BE (인프라 리드) | 박찬 | F1 — 사진 업로드/S3/프라이버시, F7 — 스트릭, 서버 인프라 전반 |
+| BE,FE | 김재현 | F3 — 유사도 매칭 로직, 전체 화면 |
+| BE | 윤채영 | F5 — 매칭 발견·양방향 공개, 채팅 |
+| AI | 강지원 | F2 + F4 — 특징 추출, 설명 생성 · F6 — 아이스브레이킹 |
+| FE | 박지훈 | 업로드, 대기 화면 |
 
 ---
 
 ## 기능 목록
 
-| No. | 기능명 | 우선순위 |
+| No. | 기능명 | 상태 |
 |---|---|---|
-| F1 | 사진 업로드 & 프라이버시 처리 | 필수 |
-| F2 | AI 사진 특징 분석 | 필수 |
-| F3 | 유사도 매칭 (참여 의사 확인 포함) | 필수 |
-| F4 | AI 감성 설명 카드 생성 | 필수 |
-| F5 | 매칭 발견 · 양방향 공개 (2단계 게이트) | 필수 |
-| F6 | 아이스브레이킹 질문 생성 | 선택 (여유 시) |
-| F7 | 스트릭(연속 참여) 기록 | 선택 (여유 시) |
-| F8 | 유사도 근거 상세 보기 | 선택 |
-| F9 | 친구 신청 | 선택 |
+| F1 | 사진 업로드 & 프라이버시 처리 | ✅ 완료 |
+| F2 | AI 사진 특징 분석 | ✅ 완료 |
+| F3 | 유사도 매칭 (게이트 1: 참여 의사 확인) | ✅ 완료 |
+| F4 | AI 감성 설명 카드 생성 | ✅ 완료 |
+| F5 | 매칭 발견 · 양방향 공개 (게이트 2) | ✅ 완료 |
+| F6 | 아이스브레이킹 질문 생성 | ✅ 완료 |
+| F7 | 스트릭(연속 참여) 기록 | ✅ 완료 |
+| F8 | 유사도 근거 상세 보기 | ⏸ 미구현 |
+| F9 | 친구 신청 | ⏸ 미구현 |
 
-**의존 관계**: F1 → F2 → F3 → F4 → F5 순서로 고정. F6 ~ F9는 핵심 플로우(F1 ~ F5) 완성 후 여유가 있을 때만 순서대로 추가.
-
-F3, F5 상세 로직은 노션의 기능명세서 개정안을 참고하세요.
+핵심 플로우(F1 → F2 → F3 → F4 → F5)는 데모 당일 기준 end-to-end로 정상 동작을 확인했습니다. 
 
 ---
+<img width="545" height="261" alt="스크린샷 2026-07-19 18 18 47" src="https://github.com/user-attachments/assets/acf57895-566f-4445-9912-27ac1f78a2f4" />
 
-## 개발 일정
+## 로컬 실행
 
-- 개발 기간: 7/1 ~ 7/17
-- 명지톤 본 행사: 7/18 (토) 10:00~18:00, 인문캠 S10120
+```bash
+# 1. Backend + AI Service + DB 전체 실행
+docker compose up --build
 
-전체 일정표는 노션 페이지를 참고하세요.
+# 2. AI Service만 단독 실행 (개발 중)
+cd ai-service
+python -m venv .venv
+source .venv/Scripts/activate   # windows git-bash
+pip install -r requirements.txt
+cp .env.example .env            # GEMINI_API_KEY 채워넣기
+uvicorn app.main:app --reload --port 8000
+```
 
-**목표 정의**
-- 필수 목표: F1 → F2 → F3 → F4 → F5 완성 (데모 성립 조건)
-- 추가 목표: F6, F7은 핵심 플로우가 실제로 동작하는 걸 확인한 뒤에만 순서대로 착수
-- 여력이 있을 때만: F8, F9
+> IntelliJ `bootRun`으로 BE만 로컬 실행 시, AI Service 호출 URL을 `http://ai-service:8000`이 아닌 `http://localhost:8000`으로 설정해야 합니다 (Docker 내부 서비스명은 Compose 네트워크 안에서만 resolve됩니다).
 
 ---
 
 ## 협업 규칙
 
-- 오프라인 미팅 1회 이상 인증 필수 (명지톤 규정)
-- 각 연동 체크포인트 전까지 FE는 목데이터로 화면 먼저 진행
-- BE/AI 기능이 늦어져도 FE 작업이 밀리지 않도록 목데이터 우선 원칙 유지
-- 브랜치 전략: `dev` 직접 작업 금지 → 기능별 브랜치 생성 → PR → 팀원 리뷰 후 병합
+- 브랜치 전략: `dev` 직접 작업 금지 → 기능별 브랜치(`feat/기능명`) → PR → 팀원 리뷰 후 병합
 
 ```bash
 git checkout dev
 git pull origin dev
-git checkout -b [기능이름]     # 예: git checkout -b feature/f1-upload
+git checkout -b feat/기능이름
 # 작업 후
 git add .
 git commit -m "feat: 기능 설명"
-git push origin [기능이름]
+git push origin feat/기능이름
 # GitHub에서 PR 생성 후 리뷰 → merge
 ```
-
----
-
-## 심사 기준
-
-| 기준 | 비중 |
-|---|---|
-| 교수님 평가 | 40% |
-| 대표단 평가 | 40% |
-| 참여자 투표 | 20% |
-
-평가 포인트: AI 활용도 · 아이디어 · 완성도 · 발표
 
 ---
 
