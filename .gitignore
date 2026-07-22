@@ -43,3 +43,4 @@ docs/local-dev-setup.md
 
 ### macOS ###
 .DS_Store
+docker-compose.override.yml
